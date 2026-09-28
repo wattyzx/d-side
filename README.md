@@ -1,16 +1,17 @@
 # D(e)Side
 
-**Decide what to dig.**
+> **Decide what to dig.**
 
-D(e)Side is a music recommendation engine for Discogs marketplace.
+
+D(e)Side helps you find the records most likely to match your taste inside a Discogs seller's inventory.
 It uses user's personal music taste and his own record collection to find and rank the best matches inside a discogs seller marketplace.
 
 ## Idea
 
 The user's taste is analyzed from:
 
-- their Discogs collection;
-- artists, releases or tracks they explicitly like;
+- their Discogs collection
+- artists, releases or tracks they explicitly like
 - natural-language preferences, for example:
   - "early 2000s minimal"
   - "deep and hypnotic house"
