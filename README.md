@@ -1,11 +1,13 @@
-# B-Side
+# D(e)Side
 
-B-Side is a music recommendation engine for Discogs marketplace.
+Decide what to dig.
+
+D(e)Side is a music recommendation engine for Discogs marketplace.
 It uses user's personal music taste and his own record collection to find and rank the best matches inside a discogs seller marketplace.
 
 ## Idea
 
-The user's taste can be inferred from:
+The user's taste is analyzed from:
 
 - their Discogs collection;
 - artists, releases or tracks they explicitly like;
@@ -85,7 +87,7 @@ User collection
        │              │
        └──────┬───────┘
               ↓
-        Taste Profile
+        User Taste
 
               +
 

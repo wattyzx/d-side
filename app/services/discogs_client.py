@@ -27,7 +27,7 @@ def get_release_raw(release_id: int) -> dict:
 
     headers = {
         "Authorization": f"Discogs token={token}",
-        "User-Agent": "B-Side/0.1",
+        "User-Agent": "D(e)Side/0.1",
     }
 
     response = httpx.get(
@@ -68,7 +68,7 @@ def get_collection_raw(
 
     headers = {
         "Authorization": f"Discogs token={token}",
-        "User-Agent": "B-Side/0.1",
+        "User-Agent": "D(e)Side/0.1",
     }
 
     response = httpx.get(
@@ -124,7 +124,7 @@ def get_inventory_raw(
 
     headers = {
         "Authorization": f"Discogs token={token}",
-        "User-Agent": "B-Side/0.1",
+        "User-Agent": "D(e)Side/0.1",
     }
 
     response = httpx.get(

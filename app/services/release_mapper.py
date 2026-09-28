@@ -80,7 +80,7 @@ def discogs_to_listing(data: dict) -> Listing:
 def inventory_to_listings(inventory_data: dict) -> list[Listing]:
     """
     Convert all Marketplace listings in one Discogs inventory response
-    into B-Side Listing objects.
+    into Listing objects.
     """
 
     return [
