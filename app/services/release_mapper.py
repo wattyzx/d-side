@@ -2,7 +2,7 @@ from app.models.release import Release
 
 
 def discogs_to_release(data: dict) -> Release:
-    
+
     artists = [
         artist["name"]
         for artist in data.get("artists", [])
@@ -38,3 +38,14 @@ def discogs_to_release(data: dict) -> Release:
         catalog_numbers=catalog_numbers,
         formats=formats,
     )
+
+def collection_item_to_release(item: dict) -> Release:
+    """
+    Convert a Discogs collection item into internal Release model.
+    Collection responses store release metadata inside the
+    'basic_information' field.
+    """
+
+    basic_information = item["basic_information"]
+
+    return discogs_to_release(basic_information)
