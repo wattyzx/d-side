@@ -76,3 +76,14 @@ def discogs_to_listing(data: dict) -> Listing:
         condition=data["condition"],
         sleeve_condition=data.get("sleeve_condition"),
     )
+
+def inventory_to_listings(inventory_data: dict) -> list[Listing]:
+    """
+    Convert all Marketplace listings in one Discogs inventory response
+    into B-Side Listing objects.
+    """
+
+    return [
+        discogs_to_listing(item)
+        for item in inventory_data.get("listings", [])
+    ]
