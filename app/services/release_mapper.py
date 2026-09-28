@@ -1,5 +1,5 @@
 from app.models.release import Release
-
+from app.models.listing import Listing
 
 def discogs_to_release(data: dict) -> Release:
 
@@ -60,3 +60,19 @@ def collection_to_releases(collection_data: dict) -> list[Release]:
         collection_item_to_release(item)
         for item in collection_data.get("releases", [])
     ]
+
+def discogs_to_listing(data: dict) -> Listing:
+    """
+    Convert a raw Discogs Marketplace listing into listing model.
+    """
+
+    price = data["price"]
+
+    return Listing(
+        id=data["id"],
+        release_id=data["release"]["id"],
+        price=price["value"],
+        currency=price["currency"],
+        condition=data["condition"],
+        sleeve_condition=data.get("sleeve_condition"),
+    )
