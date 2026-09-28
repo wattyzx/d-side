@@ -25,8 +25,19 @@ def count_genres(releases: list[Release]) -> dict[str, int]:
 def count_artists(releases: list[Release]) -> dict[str, int]:
     counts = Counter()
 
+    ignored_artists = {
+        "Various",
+        "Unknown Artist",    #ignore unknown or various artist
+    }
+
     for release in releases:
-        counts.update(release.artists)
+        artists = [
+            artist
+            for artist in release.artists
+            if artist not in ignored_artists
+        ]
+
+    counts.update(artists)
 
     return dict(counts)
 
