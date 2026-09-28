@@ -21,11 +21,11 @@ The user's taste is analyzed from:
 The first version will use only Discogs metadata and deterministic similarity
 rules.
 Later versions may introduce:
-- embeddings;
-- machine learning;
-- natural-language preference parsing;
-- user feedback;
-- learning-to-rank techniques.
+- embeddings
+- machine learning
+- natural-language preference parsing
+- user feedback
+- learning-to-rank techniques
 
 ## Initial data
 
@@ -45,13 +45,13 @@ representation of a release.
 The first recommender will compare a user's taste profile with the metadata of
 each release available in a seller's inventory.
 For example, the system may consider:
-- similarity between genres;
-- similarity between styles;
-- recurring artists;
-- recurring labels;
-- release years;
-- formats;
-- overlap with the user's collection.
+- similarity between genres
+- similarity between styles
+- recurring artists
+- recurring labels
+- release years
+- formats
+- overlap with the user's collection
 Each candidate release will receive a score.
 The seller's inventory can then be ranked according to that score.
 
