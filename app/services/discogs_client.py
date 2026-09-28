@@ -1,7 +1,10 @@
 import os
 import httpx
 from dotenv import load_dotenv
-from app.services.release_mapper import discogs_to_release
+from app.services.release_mapper import (
+    discogs_to_release,
+    collection_to_releases,
+)
 from app.models.release import Release
 
 # Load environment variables from the local .env file.
@@ -45,7 +48,11 @@ def get_release(release_id: int) -> Release:
 
     return discogs_to_release(data)
 
-def get_collection_raw(username: str) -> dict:
+def get_collection_raw(
+    username: str,
+    page: int = 1,
+    per_page: int = 50,
+) -> dict:
     """
     Retrieve the first page of a user's Discogs collection.
     Folder 0 represents the user's entire collection.
@@ -66,9 +73,33 @@ def get_collection_raw(username: str) -> dict:
     response = httpx.get(
         f"{BASE_URL}/users/{username}/collection/folders/0/releases",
         headers=headers,
+        params={
+            "page": page,
+            "per_page": per_page,
+        },
         timeout=10.0,
     )
 
     response.raise_for_status()
 
     return response.json()
+
+def get_collection(username: str) -> list[Release]:
+
+    releases = []
+    page = 1
+
+    while True:
+        collection_data = get_collection_raw(username, page=page)
+
+        page_releases = collection_to_releases(collection_data)
+        releases.extend(page_releases)
+
+        pagination = collection_data["pagination"]
+
+        if page >= pagination["pages"]:
+            break
+
+        page += 1
+
+    return releases
