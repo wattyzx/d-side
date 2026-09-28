@@ -1,6 +1,6 @@
 # D(e)Side
 
-Decide what to dig.
+**Decide what to dig.**
 
 D(e)Side is a music recommendation engine for Discogs marketplace.
 It uses user's personal music taste and his own record collection to find and rank the best matches inside a discogs seller marketplace.
