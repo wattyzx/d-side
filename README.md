@@ -12,7 +12,7 @@ The user's taste is analyzed from:
 
 - their Discogs collection
 - artists, releases or tracks they explicitly like
-- natural-language preferences, for example:
+- natural language preferences, for example:
   - "early 2000s minimal"
   - "deep and hypnotic house"
   - "music similar to Perlon releases"
@@ -24,9 +24,9 @@ rules.
 Later versions may introduce:
 - embeddings
 - machine learning
-- natural-language preference parsing
+- natural language preference parsing
 - user feedback
-- learning-to-rank techniques
+- learning ranking techniques
 
 ## Initial data
 

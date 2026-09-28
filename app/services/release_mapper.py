@@ -1,5 +1,6 @@
 from app.models.release import Release
 from app.models.listing import Listing
+from app.models.release_summary import ReleaseSummary
 
 def discogs_to_release(data: dict) -> Release:
 
@@ -67,6 +68,16 @@ def discogs_to_listing(data: dict) -> Listing:
     """
 
     price = data["price"]
+    release_data = data["release"]
+
+    summary = ReleaseSummary(
+        artist=release_data.get("artist"),
+        title=release_data.get("title"),
+        year=release_data.get("year"),
+        label=release_data.get("label"),
+        catalog_number=release_data.get("catalog_number"),
+        format=release_data.get("format"),
+    )
 
     return Listing(
         id=data["id"],
@@ -75,6 +86,7 @@ def discogs_to_listing(data: dict) -> Listing:
         currency=price["currency"],
         condition=data["condition"],
         sleeve_condition=data.get("sleeve_condition"),
+        release_summary=summary,
     )
 
 def inventory_to_listings(inventory_data: dict) -> list[Listing]:

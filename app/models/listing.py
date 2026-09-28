@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-
+from app.models.release_summary import ReleaseSummary
 
 @dataclass
 class Listing:
@@ -18,3 +18,5 @@ class Listing:
 
     condition: str
     sleeve_condition: str | None = None
+
+    release_summary: ReleaseSummary | None = None
