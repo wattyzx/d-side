@@ -1,9 +1,11 @@
 from app.models.inventory_item import InventoryItem
 from app.models.listing import Listing
+from app.models.release import Release
 from app.services.discogs_client import get_release
 
+_release_cache: dict[int, Release] = {}
 
-def enrich_listing(listing: Listing) -> InventoryItem:
+def link_listing(listing: Listing) -> InventoryItem:
     """
     Retrieve the full release metadata associated with a Marketplace listing.
 
@@ -12,9 +14,27 @@ def enrich_listing(listing: Listing) -> InventoryItem:
     and combines both objects into an InventoryItem.
     """
 
-    release = get_release(listing.release_id)
+    release_id = listing.release_id
+
+    if release_id in _release_cache:
+        release = _release_cache[release_id]
+    else:
+        release = get_release(release_id)
+        _release_cache[release_id] = release
 
     return InventoryItem(
         listing=listing,
         release=release,
     )
+
+def link_inventory(listings: list[Listing]) -> list[InventoryItem]:
+    """
+    Convert a list of Marketplace listings into InventoryItem objects.
+    The in-memory release cache prevents duplicate API requests
+    for release IDs that have already been retrieved.
+    """
+
+    return [
+        link_listing(listing)
+        for listing in listings
+    ]
