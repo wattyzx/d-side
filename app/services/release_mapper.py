@@ -49,3 +49,14 @@ def collection_item_to_release(item: dict) -> Release:
     basic_information = item["basic_information"]
 
     return discogs_to_release(basic_information)
+
+def collection_to_releases(collection_data: dict) -> list[Release]:
+    """
+    Convert all collection items in a Discogs collection response
+    into release objects.
+    """
+
+    return [
+        collection_item_to_release(item)
+        for item in collection_data.get("releases", [])
+    ]
