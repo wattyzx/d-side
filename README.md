@@ -16,7 +16,6 @@ The user's taste can be inferred from:
 
 ## Development approach
 
-B-Side will be developed incrementally.
 The first version will use only Discogs metadata and deterministic similarity
 rules.
 Later versions may introduce:
