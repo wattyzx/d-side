@@ -37,7 +37,7 @@ def count_artists(releases: list[Release]) -> dict[str, int]:
             if artist not in ignored_artists
         ]
 
-    counts.update(artists)
+        counts.update(artists)
 
     return dict(counts)
 

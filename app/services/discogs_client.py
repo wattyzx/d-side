@@ -1,6 +1,5 @@
-import os
-import httpx
 from dotenv import load_dotenv
+from app.services.discogs_http import get_json
 from app.services.release_mapper import (
     discogs_to_release,
     collection_to_releases,
@@ -11,79 +10,24 @@ from app.models.release import Release
 # Load environment variables from the local .env file.
 load_dotenv()
 
-BASE_URL = "https://api.discogs.com"
+def get_release_raw(release_id: int, *, min_interval: float = 1.1) -> dict:
+    """Retrieve release metadata with shared request pacing and retries."""
+    return get_json(f"/releases/{release_id}", min_interval=min_interval)
 
-def get_release_raw(release_id: int) -> dict:
-    """
-    Retrieve a release directly from the Discogs API.
-    For now this function returns the raw JSON response.
-    Conversion to our internal Release model will be handled separately.
-    """
-
-    token = os.getenv("DISCOGS_TOKEN")
-
-    if not token:
-        raise RuntimeError("DISCOGS_TOKEN is missing from .env")
-
-    headers = {
-        "Authorization": f"Discogs token={token}",
-        "User-Agent": "D(e)Side/0.1",
-    }
-
-    response = httpx.get(
-        f"{BASE_URL}/releases/{release_id}",
-        headers=headers,
-        timeout=10.0,
-    )
-
-    response.raise_for_status()
-
-    return response.json()
-
-def get_release(release_id: int) -> Release:
-    """
-    Retrieve a Discogs release and convert it into internal model.
-    """
-
-    data = get_release_raw(release_id)
-
-    return discogs_to_release(data)
+def get_release(release_id: int, *, min_interval: float = 1.1) -> Release:
+    """Retrieve a Discogs release and convert it into the internal model."""
+    return discogs_to_release(get_release_raw(release_id, min_interval=min_interval))
 
 def get_collection_raw(
     username: str,
     page: int = 1,
     per_page: int = 50,
 ) -> dict:
-    """
-    Retrieve the first page of a user's Discogs collection.
-    Folder 0 represents the user's entire collection.
-    For now, this function returns the raw Discogs response.
-    Pagination will be handled separately.
-    """
-
-    token = os.getenv("DISCOGS_TOKEN")
-
-    if not token:
-        raise RuntimeError("DISCOGS_TOKEN is missing from .env")
-
-    headers = {
-        "Authorization": f"Discogs token={token}",
-        "User-Agent": "D(e)Side/0.1",
-    }
-
-    response = httpx.get(
-        f"{BASE_URL}/users/{username}/collection/folders/0/releases",
-        headers=headers,
-        params={
-            "page": page,
-            "per_page": per_page,
-        },
-        timeout=10.0,
+    """Retrieve one page of a collection; folder 0 covers all folders."""
+    return get_json(
+        f"/users/{username}/collection/folders/0/releases",
+        params={"page": page, "per_page": per_page},
     )
-
-    response.raise_for_status()
-
-    return response.json()
 
 def get_collection(username: str) -> list[Release]:
 
@@ -110,36 +54,11 @@ def get_inventory_raw(
     page: int = 1,
     per_page: int = 50,
 ) -> dict:
-    """
-    Retrieve one page of a Discogs seller's inventory.
-
-    For now the raw API response is returned so that we can inspect
-    the Marketplace data structure before mapping it to our models.
-    """
-
-    token = os.getenv("DISCOGS_TOKEN")
-
-    if not token:
-        raise RuntimeError("DISCOGS_TOKEN is missing from .env")
-
-    headers = {
-        "Authorization": f"Discogs token={token}",
-        "User-Agent": "D(e)Side/0.1",
-    }
-
-    response = httpx.get(
-        f"{BASE_URL}/users/{username}/inventory",
-        headers=headers,
-        params={
-            "page": page,
-            "per_page": per_page,
-        },
-        timeout=10.0,
+    """Retrieve one page of a seller's inventory."""
+    return get_json(
+        f"/users/{username}/inventory",
+        params={"page": page, "per_page": per_page},
     )
-
-    response.raise_for_status()
-
-    return response.json()
 
 def get_inventory(username: str) -> list:
     """
@@ -172,31 +91,11 @@ def get_wantlist_raw(
     page: int = 1,
     per_page: int = 50,
 ) -> dict:
-    """Retrieve one page of a user's Discogs wantlist."""
-
-    token = os.getenv("DISCOGS_TOKEN")
-
-    if not token:
-        raise RuntimeError("DISCOGS_TOKEN is missing from .env")
-
-    headers = {
-        "Authorization": f"Discogs token={token}",
-        "User-Agent": "D-Side/0.1",
-    }
-
-    response = httpx.get(
-        f"{BASE_URL}/users/{username}/wants",
-        headers=headers,
-        params={
-            "page": page,
-            "per_page": per_page,
-        },
-        timeout=10.0,
+    """Retrieve one page of a user's wantlist."""
+    return get_json(
+        f"/users/{username}/wants",
+        params={"page": page, "per_page": per_page},
     )
-
-    response.raise_for_status()
-
-    return response.json()
 
 def get_wantlist_ids(username: str) -> set[int]:
     """
@@ -224,3 +123,20 @@ def get_wantlist_ids(username: str) -> set[int]:
         page += 1
 
     return release_ids
+
+def search_releases_by_style_raw(
+    style: str,
+    page: int = 1,
+    per_page: int = 100,
+) -> dict:
+    """Search releases by style for the candidate-generation experiment."""
+    return get_json(
+        "/database/search",
+        params={
+            "type": "release",
+            "style": style,
+            "format": "Vinyl",
+            "page": page,
+            "per_page": per_page,
+        },
+    )

@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from app.models.listing import Listing
 from app.models.user_taste import TasteProfile
 from app.models.inventory_item import InventoryItem
@@ -61,18 +63,16 @@ def pre_score_listing(
 def rank_listings(
     listings: list[Listing],
     taste: TasteProfile,
+    collection_ids: set[int],
 ) -> list[tuple[Listing, float]]:
     """
-    Rank seller listings by their lightweight pre-score.
+    Rank unowned seller listings by their lightweight pre-score.
     """
 
     scored = [
         (listing, pre_score_listing(listing, taste))
         for listing in listings
-        if (
-            listing.release_summary is not None
-            and not listing.release_summary.in_collection
-        )
+        if listing.release_id not in collection_ids
     ]
 
     return sorted(
@@ -82,47 +82,32 @@ def rank_listings(
     )
 
 def select_candidates(
-    listings: list[Listing],
     ranked_listings: list[tuple[Listing, float]],
     wantlist_ids: set[int],
     collection_ids: set[int],
     limit: int = 30,
 ) -> list[Listing]:
     """
-    - Releases already owned by the user are excluded.
-    - Wantlisted releases available from the seller are always included.
-    - Remaining slots are filled using the lightweight ranking.
+    Select one representative listing per candidate release.
+    Wantlisted and already owned releases are excluded from this pool.
+    Other copies remain available in the original inventory.
     """
 
-    eligible_listings = [
-        listing
-        for listing in listings
-        if listing.release_id not in collection_ids
-    ]
+    if limit <= 0:
+        return []
 
-    wantlisted = [
-        listing
-        for listing in eligible_listings
-        if listing.release_id in wantlist_ids
-    ]
+    candidates = []
+    seen = wantlist_ids | collection_ids
+    for listing, _ in ranked_listings:
+        if listing.release_id in seen:
+            continue
+        seen.add(listing.release_id)
+        candidates.append(listing)
+        if len(candidates) == limit:
+            break
 
-    wantlisted_listing_ids = {
-        listing.id
-        for listing in wantlisted
-    }
+    return candidates
 
-    ranked_others = [
-        listing
-        for listing, _ in ranked_listings
-        if (
-            listing.release_id not in collection_ids
-            and listing.id not in wantlisted_listing_ids
-        )
-    ]
-
-    remaining_slots = max(limit - len(wantlisted), 0)
-
-    return wantlisted + ranked_others[:remaining_slots]
 
 def score_values(
     values: list[str],
@@ -173,6 +158,21 @@ def rank_inventory_items(
         reverse=True,
     )
 
+@lru_cache(maxsize=128)
+def _year_scores(preferences: tuple[tuple[int, int], ...]) -> dict[int, float]:
+    """Compute the normalized year lookup once per profile snapshot."""
+    scores: dict[int, float] = {}
+    for preferred_year, count in preferences:
+        for offset in range(-3, 4):
+            year = preferred_year + offset
+            scores[year] = scores.get(year, 0.0) + count * (1 - abs(offset) / 4)
+
+    maximum = max(scores.values(), default=0.0)
+    if maximum == 0:
+        return {}
+    return {year: score / maximum for year, score in scores.items()}
+
+
 def score_year(
     year: int | None,
     preferences: dict[int, int],
@@ -180,38 +180,8 @@ def score_year(
     if year is None or not preferences:
         return 0.0
 
-    weights = {
-        0: 1.00,
-        1: 0.75,
-        2: 0.50,
-        3: 0.25,
-    }
-
-    def local_score(target_year: int) -> float:
-        score = 0.0
-
-        for preferred_year, count in preferences.items():
-            distance = abs(target_year - preferred_year)
-
-            if distance <= 3:
-                score += count * weights[distance]
-
-        return score
-
-    year_score = local_score(year)
-
-    min_year = min(preferences)
-    max_year = max(preferences)
-
-    max_possible_score = max(
-        local_score(candidate_year)
-        for candidate_year in range(min_year - 3, max_year + 4)
-    )
-
-    if max_possible_score == 0:
-        return 0.0
-
-    return year_score / max_possible_score
+    # A content-based key also invalidates the cache when a profile is edited.
+    return _year_scores(tuple(sorted(preferences.items()))).get(year, 0.0)
 
 def score_release_breakdown(
     release: Release,
@@ -228,10 +198,9 @@ def score_release_breakdown(
     year_score = score_year(release.year, taste.years)
 
     total_score = (
-        style_score * 0.60
-        + genre_score * 0.05
-        + artist_score * 0.10
-        + label_score * 0.20
+        style_score * 0.65
+        + artist_score * 0.15
+        + label_score * 0.15
         + year_score * 0.05
     )
 
@@ -269,3 +238,22 @@ def score_styles(
         combined_score = 1 - (1 - combined_score) * (1 - score)
 
     return combined_score
+
+def get_wantlist_matches(
+    listings: list[Listing],
+    wantlist_ids: set[int],
+    collection_ids: set[int],
+) -> list[Listing]:
+    """
+    Return seller listings explicitly present in the user's wantlist.
+    Already owned releases are excluded.
+    """
+
+    return [
+        listing
+        for listing in listings
+        if (
+            listing.release_id in wantlist_ids
+            and listing.release_id not in collection_ids
+        )
+    ]
