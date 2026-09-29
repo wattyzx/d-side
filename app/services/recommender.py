@@ -82,26 +82,47 @@ def rank_listings(
     )
 
 def select_candidates(
+    listings: list[Listing],
     ranked_listings: list[tuple[Listing, float]],
     wantlist_ids: set[int],
+    collection_ids: set[int],
     limit: int = 30,
 ) -> list[Listing]:
+    """
+    - Releases already owned by the user are excluded.
+    - Wantlisted releases available from the seller are always included.
+    - Remaining slots are filled using the lightweight ranking.
+    """
+
+    eligible_listings = [
+        listing
+        for listing in listings
+        if listing.release_id not in collection_ids
+    ]
 
     wantlisted = [
         listing
-        for listing, _ in ranked_listings
+        for listing in eligible_listings
         if listing.release_id in wantlist_ids
     ]
 
-    others = [
+    wantlisted_listing_ids = {
+        listing.id
+        for listing in wantlisted
+    }
+
+    ranked_others = [
         listing
         for listing, _ in ranked_listings
-        if listing.release_id not in wantlist_ids
+        if (
+            listing.release_id not in collection_ids
+            and listing.id not in wantlisted_listing_ids
+        )
     ]
 
     remaining_slots = max(limit - len(wantlisted), 0)
 
-    return wantlisted + others[:remaining_slots]
+    return wantlisted + ranked_others[:remaining_slots]
 
 def score_values(
     values: list[str],
