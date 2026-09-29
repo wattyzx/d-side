@@ -166,3 +166,61 @@ def get_inventory(username: str) -> list:
         page += 1
 
     return listings
+
+def get_wantlist_raw(
+    username: str,
+    page: int = 1,
+    per_page: int = 50,
+) -> dict:
+    """Retrieve one page of a user's Discogs wantlist."""
+
+    token = os.getenv("DISCOGS_TOKEN")
+
+    if not token:
+        raise RuntimeError("DISCOGS_TOKEN is missing from .env")
+
+    headers = {
+        "Authorization": f"Discogs token={token}",
+        "User-Agent": "D-Side/0.1",
+    }
+
+    response = httpx.get(
+        f"{BASE_URL}/users/{username}/wants",
+        headers=headers,
+        params={
+            "page": page,
+            "per_page": per_page,
+        },
+        timeout=10.0,
+    )
+
+    response.raise_for_status()
+
+    return response.json()
+
+def get_wantlist_ids(username: str) -> set[int]:
+    """
+    Retrieve all release IDs from a user's Discogs wantlist.
+    """
+
+    release_ids = set()
+    page = 1
+
+    while True:
+        wantlist_data = get_wantlist_raw(username, page=page)
+
+        for want in wantlist_data.get("wants", []):
+            basic_information = want.get("basic_information", {})
+            release_id = basic_information.get("id")
+
+            if release_id is not None:
+                release_ids.add(release_id)
+
+        pagination = wantlist_data["pagination"]
+
+        if page >= pagination["pages"]:
+            break
+
+        page += 1
+
+    return release_ids

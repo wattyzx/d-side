@@ -29,7 +29,6 @@ def pre_score_listing(
     """
     first-pass score using only metadata already available
     in the seller inventory.
-
     No additional Discogs release request is required.
     """
 
@@ -52,12 +51,6 @@ def pre_score_listing(
         summary.year,
         taste.years,
     )
-
-    # Wantlist is an explicit user preference,
-    # so it receives a strong ranking boost.
-    if summary.in_wantlist:
-        score += 0.50
-
 
     return (
         artist_score * 0.50
@@ -90,16 +83,25 @@ def rank_listings(
 
 def select_candidates(
     ranked_listings: list[tuple[Listing, float]],
+    wantlist_ids: set[int],
     limit: int = 30,
 ) -> list[Listing]:
-    """
-    Select the highest ranked listings.
-    """
 
-    return [
+    wantlisted = [
         listing
-        for listing, _ in ranked_listings[:limit]
+        for listing, _ in ranked_listings
+        if listing.release_id in wantlist_ids
     ]
+
+    others = [
+        listing
+        for listing, _ in ranked_listings
+        if listing.release_id not in wantlist_ids
+    ]
+
+    remaining_slots = max(limit - len(wantlisted), 0)
+
+    return wantlisted + others[:remaining_slots]
 
 def score_values(
     values: list[str],
@@ -207,7 +209,7 @@ def score_release_breakdown(
     total_score = (
         style_score * 0.60
         + genre_score * 0.05
-        + artist_score * 0.15
+        + artist_score * 0.10
         + label_score * 0.20
         + year_score * 0.05
     )
@@ -227,7 +229,6 @@ def score_styles(
 ) -> float:
     """
     Score release styles against the user's taste.
-
     Multiple matching styles increase the score instead of being averaged.
     """
 

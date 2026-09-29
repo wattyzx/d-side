@@ -58,16 +58,16 @@ The seller's inventory can then be ranked according to that score.
 
 ## Roadmap
 ### Phase 1 — Discogs data
-- Define a Release model
-- Connect to the Discogs API
-- Retrieve a release by ID
-- Retrieve a user's collection
-- Retrieve a seller's inventory
+- Define a Release model X
+- Connect to the Discogs API X
+- Retrieve a release by ID X
+- Retrieve a user's collection X
+- Retrieve a seller's inventory X
 ### Phase 2 — Baseline recommender
-- Build a user taste profile
-- Compare metadata
-- Compute similarity scores
-- Rank seller releases
+- Build a user taste profile X
+- Compare metadata X
+- Compute similarity scores X
+- Rank seller releases X
 ### Phase 3 — Semantic recommendations
 - Convert musical metadata and preferences into embeddings
 - Measure semantic similarity
