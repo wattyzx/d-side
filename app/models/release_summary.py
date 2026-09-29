@@ -15,3 +15,7 @@ class ReleaseSummary:
     label: str | None = None
     catalog_number: str | None = None
     format: str | None = None
+    in_wantlist: bool = False
+    in_collection: bool = False
+    community_have: int = 0
+    community_want: int = 0

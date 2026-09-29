@@ -69,6 +69,7 @@ def discogs_to_listing(data: dict) -> Listing:
 
     price = data["price"]
     release_data = data["release"]
+    stats = release_data.get("stats", {}).get("community", {})
 
     summary = ReleaseSummary(
         artist=release_data.get("artist"),
@@ -77,6 +78,9 @@ def discogs_to_listing(data: dict) -> Listing:
         label=release_data.get("label"),
         catalog_number=release_data.get("catalog_number"),
         format=release_data.get("format"),
+        community_have=stats.get("in_collection", 0),
+        community_want=stats.get("in_wantlist", 0),
+
     )
 
     return Listing(
