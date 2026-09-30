@@ -119,8 +119,10 @@ def rank_listings(
 
     return sorted(
         ranked,
-        key=lambda item: item[1],
-        reverse=True,
+        key=lambda item: (
+            -item[1],
+            item[0].release_id,
+        ),
     )
 
 def select_candidates(
@@ -403,3 +405,58 @@ def score_candidate(
         * demand_score
         * (1 - taste_score)
     )
+
+def select_deterministic_exploration(
+    listings: list[Listing],
+    count: int,
+) -> list[Listing]:
+
+    if count <= 0:
+        return []
+
+    if len(listings) <= count:
+        return listings.copy()
+
+    step = len(listings) / count
+
+    indices = [
+        int((index + 0.5) * step)
+        for index in range(count)
+    ]
+
+    return [
+        listings[index]
+        for index in indices
+    ]
+
+
+def select_progressive_batch(
+    pre_ranked_listings: list[Listing],
+    selected_ids: set[int],
+    exploit_size: int = 20,
+    explore_size: int = 10,
+) -> tuple[list[Listing], list[Listing]]:
+
+    unselected = [
+        listing
+        for listing in pre_ranked_listings
+        if listing.release_id
+        not in selected_ids
+    ]
+
+    exploit = unselected[
+        :exploit_size
+    ]
+
+    remaining = unselected[
+        exploit_size:
+    ]
+
+    explore = (
+        select_deterministic_exploration(
+            remaining,
+            explore_size,
+        )
+    )
+
+    return exploit, explore

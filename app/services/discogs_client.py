@@ -7,6 +7,8 @@ from app.services.release_mapper import (
 )
 from app.models.release import Release
 
+DEFAULT_PER_PAGE = 100
+
 # Load environment variables from the local .env file.
 load_dotenv()
 
@@ -21,7 +23,7 @@ def get_release(release_id: int, *, min_interval: float = 1.1) -> Release:
 def get_collection_raw(
     username: str,
     page: int = 1,
-    per_page: int = 50,
+    per_page: int = DEFAULT_PER_PAGE,
 ) -> dict:
     """Retrieve one page of a collection; folder 0 covers all folders."""
     return get_json(
@@ -52,7 +54,7 @@ def get_collection(username: str) -> list[Release]:
 def get_inventory_raw(
     username: str,
     page: int = 1,
-    per_page: int = 50,
+    per_page: int = DEFAULT_PER_PAGE,
 ) -> dict:
     """Retrieve one page of a seller's inventory."""
     return get_json(
@@ -89,7 +91,7 @@ def get_inventory(username: str) -> list:
 def get_wantlist_raw(
     username: str,
     page: int = 1,
-    per_page: int = 50,
+    per_page: int = DEFAULT_PER_PAGE,
 ) -> dict:
     """Retrieve one page of a user's wantlist."""
     return get_json(
@@ -127,7 +129,7 @@ def get_wantlist_ids(username: str) -> set[int]:
 def search_releases_by_style_raw(
     style: str,
     page: int = 1,
-    per_page: int = 100,
+    per_page: int = DEFAULT_PER_PAGE,
 ) -> dict:
     """Search releases by style for the candidate-generation experiment."""
     return get_json(

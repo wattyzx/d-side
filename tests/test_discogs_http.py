@@ -57,7 +57,7 @@ class DiscogsRequestTests(unittest.TestCase):
             self.assertAlmostEqual(current - previous, 1.1)
         calls = self.http_get.call_args_list
         self.assertTrue(calls[0].args[0].endswith("/releases/7"))
-        self.assertEqual(calls[1].kwargs["params"], {"page": 2, "per_page": 50})
+        self.assertEqual(calls[1].kwargs["params"], {"page": 2, "per_page": 100})
         self.assertEqual(calls[2].kwargs["params"]["page"], 3)
         self.assertEqual(calls[3].kwargs["params"]["page"], 4)
         self.assertEqual(calls[4].kwargs["params"]["style"], "House")
