@@ -56,6 +56,24 @@ For example, the system may consider:
 Each candidate release will receive a score.
 The seller's inventory can then be ranked according to that score.
 
+## Known limitation: candidate generation
+
+The current lightweight pre-ranking stage uses metadata already available in
+Discogs Marketplace listings, mainly:
+
+- artist
+- label
+- year
+
+However, the most discriminating recommendation signal observed so far is
+`style`, which is not included in Marketplace listing summaries.
+
+This creates an important candidate problem: not including significant record that wuold perform on the final score system.
+
+### Possible Fix
+
+Preference prototypes: derive a small set of representative record profiles from the user's collection, then retrieve and rank seller records according to their similarity to one or more prototypes rather than relying only on a single global taste profile.
+
 ## Roadmap
 ### Phase 1 — Discogs data
 - Define a Release model X

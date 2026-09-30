@@ -37,3 +37,29 @@ def link_inventory(listings: list[Listing], delay: float = 1.1) -> list[Inventor
     """
 
     return [link_listing(listing, delay=delay) for listing in listings]
+
+def group_listings_by_release(
+    listings: list[Listing],
+) -> dict[int, list[Listing]]:
+    grouped = {}
+
+    for listing in listings:
+        grouped.setdefault(
+            listing.release_id,
+            [],
+        ).append(listing)
+
+    return grouped
+
+def deduplicate_listings(
+    listings: list[Listing],
+) -> list[Listing]:
+
+    grouped = group_listings_by_release(
+        listings
+    )
+
+    return [
+        copies[0]
+        for copies in grouped.values()
+    ]

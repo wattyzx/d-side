@@ -1,10 +1,12 @@
 from functools import lru_cache
-
+from math import log1p
 from app.models.listing import Listing
 from app.models.user_taste import TasteProfile
 from app.models.inventory_item import InventoryItem
 from app.models.release import Release
 
+DEMAND_SMOOTHING = 20
+DEMAND_BONUS_WEIGHT = 0.30
 
 def score_preference(
     value: str | int | None,
@@ -65,18 +67,58 @@ def rank_listings(
     taste: TasteProfile,
     collection_ids: set[int],
 ) -> list[tuple[Listing, float]]:
-    """
-    Rank unowned seller listings by their lightweight pre-score.
-    """
 
-    scored = [
-        (listing, pre_score_listing(listing, taste))
+    candidates = [
+        listing
         for listing in listings
-        if listing.release_id not in collection_ids
+        if listing.release_id
+        not in collection_ids
+    ]
+
+    raw_taste_scores = {
+        listing.release_id:
+            pre_score_listing(
+                listing,
+                taste,
+            )
+        for listing in candidates
+    }
+
+    raw_demand_scores = {
+        listing.release_id:
+            score_demand(
+                listing
+            )
+        for listing in candidates
+    }
+
+    taste_scores = normalize_scores(
+        raw_taste_scores
+    )
+
+    demand_scores = normalize_scores(
+        raw_demand_scores
+    )
+
+    ranked = [
+        (
+            listing,
+            score_candidate(
+                taste_scores.get(
+                    listing.release_id,
+                    0.0,
+                ),
+                demand_scores.get(
+                    listing.release_id,
+                    0.0,
+                ),
+            ),
+        )
+        for listing in candidates
     ]
 
     return sorted(
-        scored,
+        ranked,
         key=lambda item: item[1],
         reverse=True,
     )
@@ -187,21 +229,47 @@ def score_release_breakdown(
     release: Release,
     taste: TasteProfile,
 ) -> dict[str, float]:
-    """
-    Return the individual components of the full recommendation score.
-    """
 
-    style_score = score_styles(release.styles, taste.styles)
-    genre_score = score_values(release.genres, taste.genres)
-    artist_score = score_values(release.artists, taste.artists)
-    label_score = score_values(release.labels, taste.labels)
-    year_score = score_year(release.year, taste.years)
+    style_score = score_styles(
+        release.styles,
+        taste.styles,
+    )
 
-    total_score = (
-        style_score * 0.65
-        + artist_score * 0.15
-        + label_score * 0.15
-        + year_score * 0.05
+    genre_score = score_values(
+        release.genres,
+        taste.genres,
+    )
+
+    artist_score = score_values(
+        release.artists,
+        taste.artists,
+    )
+
+    label_score = score_values(
+        release.labels,
+        taste.labels,
+    )
+
+    year_score = score_year(
+        release.year,
+        taste.years,
+    )
+
+    # Styles describe the core musical compatibility.
+    # Artist, label and year act as positive confidence signals.
+    #
+    # Unknown artist / label no longer reduce the maximum
+    # score a stylistically strong release can achieve.
+
+    bonus = (
+        artist_score * 0.40
+        + label_score * 0.40
+        + year_score * 0.20
+    )
+
+    total = (
+        style_score
+        + (1 - style_score) * bonus
     )
 
     return {
@@ -210,7 +278,8 @@ def score_release_breakdown(
         "artists": artist_score,
         "labels": label_score,
         "year": year_score,
-        "total": total_score,
+        "bonus": bonus,
+        "total": total,
     }
 
 def score_styles(
@@ -257,3 +326,80 @@ def get_wantlist_matches(
             and listing.release_id not in collection_ids
         )
     ]
+
+
+### PRE LISTING METHOD USING WANT/HAVE RATIO TO ESTABLISH DEMAN AND START FROM THERE
+
+def score_demand(listing: Listing) -> float:
+    summary = listing.release_summary
+
+    if summary is None:
+        return 0.0
+
+    want = max(
+        0,
+        summary.community_want,
+    )
+
+    have = max(
+        0,
+        summary.community_have,
+    )
+
+    if want == 0:
+        return 0.0
+
+    relative_demand = (
+        want
+        / (
+            want
+            + have
+            + DEMAND_SMOOTHING
+        )
+    )
+
+    confidence = log1p(
+        want + have
+    )
+
+    return (
+        relative_demand
+        * confidence
+    )
+
+
+def normalize_scores(
+    scores: dict[int, float],
+) -> dict[int, float]:
+
+    if not scores:
+        return {}
+
+    max_score = max(
+        scores.values()
+    )
+
+    if max_score <= 0:
+        return {
+            key: 0.0
+            for key in scores
+        }
+
+    return {
+        key: value / max_score
+        for key, value
+        in scores.items()
+    }
+
+
+def score_candidate(
+    taste_score: float,
+    demand_score: float,
+) -> float:
+
+    return (
+        taste_score
+        + DEMAND_BONUS_WEIGHT
+        * demand_score
+        * (1 - taste_score)
+    )

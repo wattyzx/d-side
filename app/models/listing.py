@@ -5,7 +5,6 @@ from app.models.release_summary import ReleaseSummary
 class Listing:
     """
     Representation of a Discogs Marketplace listing.
-
     A Listing represents an item for sale, while Release represents
     the musical release itself.
     """
