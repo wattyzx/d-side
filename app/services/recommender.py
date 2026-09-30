@@ -429,12 +429,13 @@ def select_deterministic_exploration(
         for index in indices
     ]
 
+## 25 elements of pre ranked list, 5 from median of different batchs
 
 def select_progressive_batch(
     pre_ranked_listings: list[Listing],
     selected_ids: set[int],
-    exploit_size: int = 20,
-    explore_size: int = 10,
+    exploit_size: int = 25,
+    explore_size: int = 5,
 ) -> tuple[list[Listing], list[Listing]]:
 
     unselected = [
