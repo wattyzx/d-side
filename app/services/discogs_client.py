@@ -1,4 +1,6 @@
 from dotenv import load_dotenv
+from dataclasses import asdict
+from app.services.cache_service import SQLiteCache
 from app.services.discogs_http import get_json
 from app.services.release_mapper import (
     discogs_to_release,
@@ -7,6 +9,7 @@ from app.services.release_mapper import (
 )
 from app.models.release import Release
 
+cache = SQLiteCache()
 DEFAULT_PER_PAGE = 100
 
 # Load environment variables from the local .env file.
@@ -23,13 +26,34 @@ def get_release(release_id: int, *, min_interval: float = 1.1) -> Release:
 def get_collection_raw(
     username: str,
     page: int = 1,
-    per_page: int = DEFAULT_PER_PAGE,
-) -> dict:
-    """Retrieve one page of a collection; folder 0 covers all folders."""
-    return get_json(
-        f"/users/{username}/collection/folders/0/releases",
-        params={"page": page, "per_page": per_page},
+    per_page: int = 100,
+):
+    cache_key = f"{username}:{page}:{per_page}"
+
+    cached = cache.get(
+        "collection_raw",
+        cache_key,
     )
+
+    if cached is not None:
+        return cached
+
+    data = get_json(
+        f"/users/{username}/collection/folders/0/releases",
+        params={
+            "page": page,
+            "per_page": per_page,
+        },
+    )
+
+    cache.set(
+        "collection_raw",
+        cache_key,
+        data,
+        ttl_seconds=21600,
+    )
+
+    return data
 
 def get_collection(username: str) -> list[Release]:
 
@@ -91,13 +115,34 @@ def get_inventory(username: str) -> list:
 def get_wantlist_raw(
     username: str,
     page: int = 1,
-    per_page: int = DEFAULT_PER_PAGE,
-) -> dict:
-    """Retrieve one page of a user's wantlist."""
-    return get_json(
-        f"/users/{username}/wants",
-        params={"page": page, "per_page": per_page},
+    per_page: int = 100,
+):
+    cache_key = f"{username}:{page}:{per_page}"
+
+    cached = cache.get(
+        "wantlist_raw",
+        cache_key,
     )
+
+    if cached is not None:
+        return cached
+
+    data = get_json(
+        f"/users/{username}/wants",
+        params={
+            "page": page,
+            "per_page": per_page,
+        },
+    )
+
+    cache.set(
+        "wantlist_raw",
+        cache_key,
+        data,
+        ttl_seconds=21600,
+    )
+
+    return data
 
 def get_wantlist_ids(username: str) -> set[int]:
     """

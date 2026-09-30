@@ -1,13 +1,15 @@
 import os
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 
 from app.services import discogs_client, discogs_http, inventory_service
 from app.models.listing import Listing
-
+from app.services.cache_service import SQLiteCache
 
 def response(status=200, data=None, headers=None):
     return httpx.Response(
@@ -20,9 +22,13 @@ def response(status=200, data=None, headers=None):
 
 class DiscogsRequestTests(unittest.TestCase):
     def setUp(self):
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        cache = SQLiteCache(Path(temp_dir.name) / "cache.sqlite3")
         self.now = 0.0
         self.started = []
         for patcher in (
+            patch.object(discogs_client, "cache", cache),
             patch.dict(os.environ, {"DISCOGS_TOKEN": "test-token"}),
             patch.object(discogs_http, "_pacer", discogs_http._RequestPacer()),
             patch.object(discogs_http.time, "monotonic", side_effect=lambda: self.now),
@@ -48,19 +54,27 @@ class DiscogsRequestTests(unittest.TestCase):
 
     def test_all_endpoints_share_pacing_and_keep_request_parameters(self):
         self.responses = iter([response()] * 5)
-        discogs_client.get_release_raw(7)
-        discogs_client.get_collection_raw("user", page=2)
-        discogs_client.get_inventory_raw("seller", page=3)
-        discogs_client.get_wantlist_raw("user", page=4)
-        discogs_client.search_releases_by_style_raw("House")
+
+        discogs_client.get_release_raw(999999)
+        discogs_client.get_collection_raw("test_pacing_user_12345", page=2)
+        discogs_client.get_inventory_raw("test_pacing_seller_12345", page=3)
+        discogs_client.get_wantlist_raw("test_pacing_user_12345", page=4)
+        discogs_client.search_releases_by_style_raw("TestPacingHouse12345")
+
         for previous, current in zip(self.started, self.started[1:]):
             self.assertAlmostEqual(current - previous, 1.1)
+
         calls = self.http_get.call_args_list
-        self.assertTrue(calls[0].args[0].endswith("/releases/7"))
-        self.assertEqual(calls[1].kwargs["params"], {"page": 2, "per_page": 100})
+        self.assertEqual(len(calls), 5)
+
+        self.assertTrue(calls[0].args[0].endswith("/releases/999999"))
+        self.assertEqual(
+            calls[1].kwargs["params"],
+            {"page": 2, "per_page": 100},
+        )
         self.assertEqual(calls[2].kwargs["params"]["page"], 3)
         self.assertEqual(calls[3].kwargs["params"]["page"], 4)
-        self.assertEqual(calls[4].kwargs["params"]["style"], "House")
+        self.assertEqual(calls[4].kwargs["params"]["style"], "TestPacingHouse12345")
 
     def test_inventory_pagination_uses_shared_pacing(self):
         self.responses = iter([
