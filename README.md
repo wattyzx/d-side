@@ -116,3 +116,8 @@ User collection
               ↓
          Ranked Releases
 ```
+## Better engine option
+
+The engine may combine metadata such as years and styles. 
+Using recourring years of particular style, may have a better understandig of the user'style. 
+To do so building proto type or selecting rappresentative records in the collection could be useful.
