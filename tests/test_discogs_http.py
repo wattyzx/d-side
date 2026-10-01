@@ -142,6 +142,66 @@ class DiscogsRequestTests(unittest.TestCase):
             inventory_service.link_inventory([item])
         self.assertEqual(self.started, [0])
         self.assertEqual(self.now, 0)
+        
+    def test_inventory_raw_uses_cache_per_page_and_seller(self):
+        self.responses = iter([
+            response(
+                data={
+                    "listings": ["seller_a_page_1"],
+                    "pagination": {"pages": 2},
+                }
+            ),
+            response(
+                data={
+                    "listings": ["seller_a_page_2"],
+                    "pagination": {"pages": 2},
+                }
+            ),
+            response(
+                data={
+                    "listings": ["seller_b_page_1"],
+                    "pagination": {"pages": 1},
+                }
+            ),
+        ])
+
+        first = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=1,
+            per_page=100,
+        )
+
+        cached = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=1,
+            per_page=100,
+        )
+
+        second_page = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=2,
+            per_page=100,
+        )
+
+        other_seller = discogs_client.get_inventory_raw(
+            "SellerB",
+            page=1,
+            per_page=100,
+        )
+
+        self.assertEqual(first["listings"], ["seller_a_page_1"])
+        self.assertEqual(cached["listings"], ["seller_a_page_1"])
+        self.assertEqual(second_page["listings"], ["seller_a_page_2"])
+        self.assertEqual(other_seller["listings"], ["seller_b_page_1"])
+
+        # 4 richieste logiche, ma solo 3 chiamate API:
+        # SellerA/page1 → API
+        # SellerA/page1 → CACHE
+        # SellerA/page2 → API
+        # SellerB/page1 → API
+        self.assertEqual(self.http_get.call_count, 3)
+
+        self.assertEqual(self.started, [0, 1.1, 2.2])
 
     def test_custom_interval_can_increase_but_not_bypass_shared_pacing(self):
         self.responses = iter([response()] * 3)
@@ -155,7 +215,6 @@ class DiscogsRequestTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 discogs_http.get_json("/test")
         self.http_get.assert_not_called()
-
 
 if __name__ == "__main__":
     unittest.main()

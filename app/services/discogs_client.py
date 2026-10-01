@@ -81,10 +81,33 @@ def get_inventory_raw(
     per_page: int = DEFAULT_PER_PAGE,
 ) -> dict:
     """Retrieve one page of a seller's inventory."""
-    return get_json(
-        f"/users/{username}/inventory",
-        params={"page": page, "per_page": per_page},
+
+    cache_key = f"{username}:{page}:{per_page}"
+
+    cached = cache.get(
+        "inventory_raw",
+        cache_key,
     )
+
+    if cached is not None:
+        return cached
+
+    data = get_json(
+        f"/users/{username}/inventory",
+        params={
+            "page": page,
+            "per_page": per_page,
+        },
+    )
+
+    cache.set(
+        "inventory_raw",
+        cache_key,
+        data,
+        ttl_seconds=21600,
+    )
+
+    return data
 
 def get_inventory(username: str) -> list:
     """

@@ -313,7 +313,6 @@ class CacheServiceTests(unittest.TestCase):
             )
         )
 
-
     def test_cache_key_is_stable(self):
         key_a = make_cache_key(
             "https://api.discogs.com/releases/123",
