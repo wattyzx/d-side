@@ -74,15 +74,16 @@ def get_collection(username: str) -> list[Release]:
         page += 1
 
     return releases
-
 def get_inventory_raw(
     username: str,
     page: int = 1,
     per_page: int = DEFAULT_PER_PAGE,
+    sort: str | None = None,
+    sort_order: str | None = None,
 ) -> dict:
     """Retrieve one page of a seller's inventory."""
 
-    cache_key = f"{username}:{page}:{per_page}"
+    cache_key = f"{username}:{page}:{per_page}:{sort}:{sort_order}"
 
     cached = cache.get(
         "inventory_raw",
@@ -92,12 +93,20 @@ def get_inventory_raw(
     if cached is not None:
         return cached
 
+    params = {
+        "page": page,
+        "per_page": per_page,
+    }
+
+    if sort is not None:
+        params["sort"] = sort
+
+    if sort_order is not None:
+        params["sort_order"] = sort_order
+
     data = get_json(
         f"/users/{username}/inventory",
-        params={
-            "page": page,
-            "per_page": per_page,
-        },
+        params=params,
     )
 
     cache.set(
@@ -109,29 +118,58 @@ def get_inventory_raw(
 
     return data
 
-def get_inventory(username: str) -> list:
+def get_inventory(
+    username: str,
+    pages: list[int] | None = None,
+) -> list:
     """
-    Retrieve all listings from a Discogs seller inventory.
+    Retrieve listings from a Discogs seller inventory.
 
-    Discogs paginates Marketplace inventories, so this function
-    requests every page and combines all listings into one list.
+    If pages is None, retrieve the complete inventory.
+    If pages is provided, retrieve only the selected pages.
     """
 
     listings = []
-    page = 1
 
-    while True:
-        inventory_data = get_inventory_raw(username, page=page)
+    if pages is None:
+        page = 1
+
+        while True:
+            inventory_data = get_inventory_raw(
+                username,
+                page=page,
+            )
+
+            page_listings = inventory_to_listings(inventory_data)
+            listings.extend(page_listings)
+
+            pagination = inventory_data["pagination"]
+
+            if page >= pagination["pages"]:
+                break
+
+            page += 1
+
+        return listings
+
+    pages = sorted(set(pages))
+
+    if not pages:
+        return []
+
+    if pages[0] != 1:
+        raise ValueError(
+            "Sampled inventory pages must include page 1"
+        )
+
+    for page in pages:
+        inventory_data = get_inventory_raw(
+            username,
+            page=page,
+        )
 
         page_listings = inventory_to_listings(inventory_data)
         listings.extend(page_listings)
-
-        pagination = inventory_data["pagination"]
-
-        if page >= pagination["pages"]:
-            break
-
-        page += 1
 
     return listings
 

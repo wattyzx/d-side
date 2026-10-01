@@ -2,6 +2,7 @@ from collections import Counter
 
 from app.models.release import Release
 from app.models.user_taste import TasteProfile
+from app.services.generic_metadata import is_generic_artist, is_generic_label
 
 
 def count_styles(releases: list[Release]) -> dict[str, int]:
@@ -25,16 +26,11 @@ def count_genres(releases: list[Release]) -> dict[str, int]:
 def count_artists(releases: list[Release]) -> dict[str, int]:
     counts = Counter()
 
-    ignored_artists = {
-        "Various",
-        "Unknown Artist",    #ignore unknown or various artist
-    }
-
     for release in releases:
         artists = [
             artist
             for artist in release.artists
-            if artist not in ignored_artists
+            if not is_generic_artist(artist)
         ]
 
         counts.update(artists)
@@ -46,7 +42,7 @@ def count_labels(releases: list[Release]) -> dict[str, int]:
     counts = Counter()
 
     for release in releases:
-        counts.update(release.labels)
+        counts.update(label for label in release.labels if not is_generic_label(label))
 
     return dict(counts)
 

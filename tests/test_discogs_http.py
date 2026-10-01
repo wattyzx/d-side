@@ -203,6 +203,66 @@ class DiscogsRequestTests(unittest.TestCase):
 
         self.assertEqual(self.started, [0, 1.1, 2.2])
 
+    def test_inventory_raw_supports_sorting_and_separates_cache_keys(self):
+        self.responses = iter([
+            response(data={"listings": ["artist"]}),
+            response(data={"listings": ["price"]}),
+        ])
+
+        artist = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=1,
+            per_page=100,
+            sort="artist",
+            sort_order="asc",
+        )
+
+        # Deve essere cache hit
+        artist_cached = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=1,
+            per_page=100,
+            sort="artist",
+            sort_order="asc",
+        )
+
+        # Sort diverso → cache miss
+        price = discogs_client.get_inventory_raw(
+            "SellerA",
+            page=1,
+            per_page=100,
+            sort="price",
+            sort_order="asc",
+        )
+
+        self.assertEqual(artist["listings"], ["artist"])
+        self.assertEqual(artist_cached["listings"], ["artist"])
+        self.assertEqual(price["listings"], ["price"])
+
+        self.assertEqual(self.http_get.call_count, 2)
+
+        calls = self.http_get.call_args_list
+
+        self.assertEqual(
+            calls[0].kwargs["params"],
+            {
+                "page": 1,
+                "per_page": 100,
+                "sort": "artist",
+                "sort_order": "asc",
+            },
+        )
+
+        self.assertEqual(
+            calls[1].kwargs["params"],
+            {
+                "page": 1,
+                "per_page": 100,
+                "sort": "price",
+                "sort_order": "asc",
+            },
+        )
+
     def test_custom_interval_can_increase_but_not_bypass_shared_pacing(self):
         self.responses = iter([response()] * 3)
         discogs_http.get_json("/test")

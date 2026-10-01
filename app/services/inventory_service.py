@@ -63,3 +63,30 @@ def deduplicate_listings(
         copies[0]
         for copies in grouped.values()
     ]
+
+def choose_inventory_pages(
+    total_pages: int,
+    sample_pages: int,
+) -> list[int]:
+    """
+    Select pages distributed across the full seller inventory.
+
+    If the requested sample is larger than the inventory,
+    return every page.
+    """
+
+    if total_pages <= 0 or sample_pages <= 0:
+        return []
+
+    if sample_pages >= total_pages:
+        return list(range(1, total_pages + 1))
+
+    if sample_pages == 1:
+        return [1]
+
+    pages = [
+        round(i * (total_pages - 1) / (sample_pages - 1)) + 1
+        for i in range(sample_pages)
+    ]
+
+    return sorted(set(pages))

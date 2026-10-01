@@ -4,9 +4,11 @@ from app.models.listing import Listing
 from app.models.user_taste import TasteProfile
 from app.models.inventory_item import InventoryItem
 from app.models.release import Release
+from app.services.generic_metadata import is_generic_artist, is_generic_label
 
 DEMAND_SMOOTHING = 20
 DEMAND_BONUS_WEIGHT = 0.30
+GENRE_FALLBACK_WEIGHT = 0.25
 
 def score_preference(
     value: str | int | None,
@@ -30,24 +32,18 @@ def pre_score_listing(
     listing: Listing,
     taste: TasteProfile,
 ) -> float:
-    """
-    first-pass score using only metadata already available
-    in the seller inventory.
-    No additional Discogs release request is required.
-    """
 
     summary = listing.release_summary
 
     if summary is None:
         return 0.0
 
-    artist_score = score_preference(
-        summary.artist,
+    artist_score = score_artists(
+        [summary.artist] if summary.artist is not None else [],
         taste.artists,
     )
-
-    label_score = score_preference(
-        summary.label,
+    label_score = score_labels(
+        [summary.label] if summary.label is not None else [],
         taste.labels,
     )
 
@@ -58,8 +54,8 @@ def pre_score_listing(
 
     return (
         artist_score * 0.50
-        + label_score * 0.40
-        + year_score * 0.10
+        + label_score * 0.30
+        + year_score * 0.20
     )
 
 def rank_listings(
@@ -75,7 +71,8 @@ def rank_listings(
         not in collection_ids
     ]
 
-    raw_taste_scores = {
+    # Pre-scores are already bounded to [0, 1]; preserve their absolute strength.
+    taste_scores = {
         listing.release_id:
             pre_score_listing(
                 listing,
@@ -91,10 +88,6 @@ def rank_listings(
             )
         for listing in candidates
     }
-
-    taste_scores = normalize_scores(
-        raw_taste_scores
-    )
 
     demand_scores = normalize_scores(
         raw_demand_scores
@@ -241,13 +234,20 @@ def score_release_breakdown(
         release.genres,
         taste.genres,
     )
+    # Use genre as weak evidence only when a style comparison is unavailable.
+    # Present but unmatched styles must not receive the genre fallback.
+    musical_match = (
+        style_score
+        if release.styles and taste.styles
+        else GENRE_FALLBACK_WEIGHT * genre_score
+    )
 
-    artist_score = score_values(
+    artist_score = score_artists(
         release.artists,
         taste.artists,
     )
 
-    label_score = score_values(
+    label_score = score_labels(
         release.labels,
         taste.labels,
     )
@@ -257,26 +257,22 @@ def score_release_breakdown(
         taste.years,
     )
 
-    # Styles describe the core musical compatibility.
-    # Artist, label and year act as positive confidence signals.
-    #
-    # Unknown artist / label no longer reduce the maximum
-    # score a stylistically strong release can achieve.
-
+    # Supporting metadata can contribute at most 0.35 of the remaining score.
     bonus = (
-        artist_score * 0.40
-        + label_score * 0.40
-        + year_score * 0.20
+        artist_score * 0.15
+        + label_score * 0.15
+        + year_score * 0.05
     )
 
     total = (
-        style_score
-        + (1 - style_score) * bonus
+        musical_match
+        + (1 - musical_match) * bonus
     )
 
     return {
         "styles": style_score,
         "genres": genre_score,
+        "musical_match": musical_match,
         "artists": artist_score,
         "labels": label_score,
         "year": year_score,
@@ -461,3 +457,30 @@ def select_progressive_batch(
     )
 
     return exploit, explore
+
+def score_artists(
+    artists: list[str],
+    preferences: dict[str, int],
+) -> float:
+    """Ignore placeholders in both matches and preference normalization."""
+    return score_values(
+        [artist for artist in artists if not is_generic_artist(artist)],
+        {
+            artist: count for artist, count in preferences.items()
+            if not is_generic_artist(artist)
+        },
+    )
+
+
+def score_labels(
+    labels: list[str],
+    preferences: dict[str, int],
+) -> float:
+    """Ignore placeholders in both matches and preference normalization."""
+    return score_values(
+        [label for label in labels if not is_generic_label(label)],
+        {
+            label: count for label, count in preferences.items()
+            if not is_generic_label(label)
+        },
+    )
