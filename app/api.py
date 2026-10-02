@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from fastapi.middleware.cors import CORSMiddleware
 from app.services.recommendation_service import recommend
 
 
@@ -9,6 +10,18 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app = FastAPI(
+    title="D(e)Side API",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class RecommendRequest(BaseModel):
     username: str = Field(min_length=1)
