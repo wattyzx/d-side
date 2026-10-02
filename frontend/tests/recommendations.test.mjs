@@ -62,7 +62,7 @@ test("reports interrupted streams after publishing available results", async (t)
 });
 
 
-test("continuation requests send shown releases and inventory range", async (t) => {
+test("continuation requests send scored releases without limiting inventory pages", async (t) => {
   let request;
   t.mock.method(globalThis, "fetch", async (_, options) => {
     request = JSON.parse(options.body);
@@ -70,11 +70,11 @@ test("continuation requests send shown releases and inventory range", async (t) 
   });
   const events = [];
   await getRecommendations("user", "seller", {
-    excludeReleaseIds: [1, 2], inventoryPageLimit: 20,
+    excludeReleaseIds: [1, 2],
     onEvent: (event) => events.push(event),
   });
   assert.deepEqual(request, {
-    username: "user", seller: "seller", exclude_release_ids: [1, 2], inventory_page_limit: 20,
+    username: "user", seller: "seller", exclude_release_ids: [1, 2],
   });
   assert.equal(events[0].has_more, false);
 });

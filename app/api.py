@@ -32,7 +32,10 @@ class RecommendRequest(BaseModel):
 
 class RecommendStreamRequest(RecommendRequest):
     exclude_release_ids: list[int] = Field(default_factory=list)
-    inventory_page_limit: int = Field(default=10, ge=1)
+    inventory_page_limit: int | None = Field(
+        default=None, ge=1, deprecated=True,
+        description="Legacy argument; searches scan all accessible inventory pages (up to 100).",
+    )
 
 
 class WantlistRequest(BaseModel):

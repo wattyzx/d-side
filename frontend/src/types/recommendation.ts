@@ -23,6 +23,8 @@ export interface RecommendationResponse {
   username: string;
   seller: string;
   sample_pages: number[];
+  reported_pages: number;
+  inventory_truncated: boolean;
   sampled_listings: number;
   candidates: number;
   recommendations: Recommendation[];

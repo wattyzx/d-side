@@ -32,7 +32,8 @@ export type StreamEvent = {
 
   recommendations?: number;
   has_more?: boolean;
-  next_inventory_page_limit?: number;
+  inventory_truncated?: boolean;
+  reported_pages?: number;
 
   [key: string]: unknown;
 };
@@ -40,7 +41,6 @@ export type StreamEvent = {
 type StreamCallbacks = {
   onEvent?: (event: StreamEvent) => void;
   excludeReleaseIds?: number[];
-  inventoryPageLimit?: number;
 };
 
 export function sortRecommendations(
@@ -69,7 +69,6 @@ export async function getRecommendations(
         username,
         seller,
         exclude_release_ids: callbacks.excludeReleaseIds ?? [],
-        inventory_page_limit: callbacks.inventoryPageLimit ?? 10,
       }),
     },
   );

@@ -24,7 +24,7 @@ function App() {
 
   const [activeSearch, setActiveSearch] = useState<{ username: string; seller: string } | null>(null);
   const [hasMore, setHasMore] = useState(true);
-  const [nextPageLimit, setNextPageLimit] = useState(10);
+  const [inventoryNotice, setInventoryNotice] = useState("");
   const visibleRecommendations = recommendations.filter((record) => record.score > 0.1);
 
   const recommendationMutation = useMutation({
@@ -32,11 +32,9 @@ function App() {
       username: string;
       seller: string;
       excludeReleaseIds: number[];
-      inventoryPageLimit: number;
     }) => getRecommendations(search.username, search.seller, {
       onEvent: handleStreamEvent,
       excludeReleaseIds: search.excludeReleaseIds,
-      inventoryPageLimit: search.inventoryPageLimit,
     }),
     onError: () => {
       setStatus("Stopped before completion. Search more to continue.");
@@ -57,11 +55,15 @@ function App() {
     recommendationMutation.mutate({
       ...activeSearch,
       excludeReleaseIds: [...recommendations, ...wantlistRecommendations].map((record) => record.release_id),
-      inventoryPageLimit: nextPageLimit,
     });
   }
 
   function handleStreamEvent(event: StreamEvent) {
+    if (event.type === "start") {
+      setInventoryNotice(event.inventory_truncated
+        ? `Discogs only allows access to the first 100 of this seller’s ${event.reported_pages} inventory pages. Wantlist matches and recommendations cover those pages; records beyond them may be missing.`
+        : "");
+    }
     if (event.type === "status") {
       setStatus(event.message ?? "");
     }
@@ -104,8 +106,11 @@ function App() {
 
     if (event.type === "done") {
       setHasMore(event.has_more ?? false);
-      setNextPageLimit(event.next_inventory_page_limit ?? 10);
-      setStatus(event.has_more ? "Done — more records available" : "Done — all available records searched");
+      setStatus(event.has_more
+        ? "Done — more records available"
+        : event.inventory_truncated
+          ? "Done — all accessible records searched"
+          : "Done — all available records searched");
     }
 
     if (event.type === "error") {
@@ -128,13 +133,13 @@ function App() {
     const search = { username: username.trim(), seller: seller.trim() };
     setActiveSearch(search);
     setHasMore(true);
-    setNextPageLimit(10);
+    setInventoryNotice("");
     wantlistMutation.reset();
     setRecommendations([]);
     setWantlistRecommendations([]);
     setStatus("Starting...");
 
-    recommendationMutation.mutate({ ...search, excludeReleaseIds: [], inventoryPageLimit: 10 });
+    recommendationMutation.mutate({ ...search, excludeReleaseIds: [] });
   }
 
   return (
@@ -207,6 +212,8 @@ function App() {
           </p>
         )}
 
+        {inventoryNotice && <p className="status">{inventoryNotice}</p>}
+
         {recommendationMutation.isError && (
           <p className="error">
             Error: {recommendationMutation.error.message}
@@ -261,7 +268,7 @@ function App() {
               disabled={!hasMore || recommendationMutation.isPending || wantlistMutation.isPending}
               onClick={handleSearchMore}
             >
-              {recommendationMutation.isPending ? "Searching..." : hasMore ? "Search more" : "No more records"}
+              {recommendationMutation.isPending ? "Searching..." : hasMore ? "Search more" : inventoryNotice ? "No more accessible records" : "No more records"}
             </button>
           </section>
         )}

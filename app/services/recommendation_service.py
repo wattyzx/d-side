@@ -21,9 +21,10 @@ from app.services.inventory_service import (
 )
 
 
-SAMPLE_PAGE_LIMIT = 10
 FULL_SCORE_LIMIT = 30
 EXPLORATION_SIZE = 5
+# Discogs rejects page > 100 for inventories belonging to other users.
+INVENTORY_PAGE_LIMIT = 100
 
 
 def _select_candidate_batch(ranked, wantlist_ids, excluded_ids):
@@ -78,15 +79,7 @@ def recommend(
         "pagination"
     ]["pages"]
 
-    sample_pages = list(
-        range(
-            1,
-            min(
-                reported_pages,
-                SAMPLE_PAGE_LIMIT,
-            ) + 1,
-        )
-    )
+    sample_pages = list(range(1, min(reported_pages, INVENTORY_PAGE_LIMIT) + 1))
 
     # -------------------------
     # INVENTORY
@@ -167,6 +160,8 @@ def recommend(
         "username": username,
         "seller": seller,
         "sample_pages": sample_pages,
+        "reported_pages": reported_pages,
+        "inventory_truncated": reported_pages > len(sample_pages),
         "sampled_listings": len(listings),
         "candidates": len(candidates),
         "recommendations": recommendations,
@@ -208,10 +203,12 @@ def recommend_stream(
     seller: str,
     *,
     exclude_release_ids: list[int] | None = None,
-    inventory_page_limit: int = SAMPLE_PAGE_LIMIT,
+    inventory_page_limit: int | None = None,
 ):
     try:
-        if inventory_page_limit < 1:
+        # Accept the old page-limit argument for existing clients, but always
+        # scan all accessible pages, up to Discogs' limit for other sellers.
+        if inventory_page_limit is not None and inventory_page_limit < 1:
             raise ValueError("inventory_page_limit must be positive")
         excluded_ids = set(exclude_release_ids or [])
         # -------------------------
@@ -267,15 +264,8 @@ def recommend_stream(
             "pagination"
         ]["pages"]
 
-        sample_pages = list(
-            range(
-                1,
-                min(
-                    reported_pages,
-                    inventory_page_limit,
-                ) + 1,
-            )
-        )
+        sample_pages = list(range(1, min(reported_pages, INVENTORY_PAGE_LIMIT) + 1))
+        inventory_truncated = reported_pages > len(sample_pages)
 
         yield _stream_event(
             "start",
@@ -283,6 +273,7 @@ def recommend_stream(
             seller=seller,
             sample_pages=sample_pages,
             reported_pages=reported_pages,
+            inventory_truncated=inventory_truncated,
         )
 
         # -------------------------
@@ -353,6 +344,9 @@ def recommend_stream(
 
         yield _stream_event(
             "inventory_complete",
+            scanned_pages=len(sample_pages),
+            reported_pages=reported_pages,
+            inventory_truncated=inventory_truncated,
             listings=len(listings),
             wantlist_matches=len(
                 wantlist_seen
@@ -379,12 +373,6 @@ def recommend_stream(
             wantlist_ids,
             collection_ids | excluded_ids,
         )
-        more_pages = len(sample_pages) < reported_pages
-        next_page_limit = (
-            inventory_page_limit if more_candidates
-            else min(reported_pages, inventory_page_limit + SAMPLE_PAGE_LIMIT)
-        )
-
         yield _stream_event(
             "pre_rank_complete",
             candidates=len(candidates),
@@ -417,8 +405,9 @@ def recommend_stream(
         yield _stream_event(
             "done",
             recommendations=len(candidates),
-            has_more=more_candidates or more_pages,
-            next_inventory_page_limit=next_page_limit,
+            has_more=more_candidates,
+            next_inventory_page_limit=len(sample_pages),
+            inventory_truncated=inventory_truncated,
             wantlist_matches=len(
                 wantlist_seen
             ),

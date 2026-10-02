@@ -9,7 +9,8 @@ You can open each record on Discogs or add it straight to your wantlist.
 
 ## How it works
 
-The first search reads up to 10 inventory pages (1,000 listings). It picks
+Each search reads all accessible pages of the seller’s inventory and shows wantlist
+matches as they’re found. It picks
 25 promising records based on artist, label, year, and demand, plus 5 from
 across the remaining list to give less obvious matches a chance.
 It then loads their full details and scores them against your collection,
@@ -17,9 +18,16 @@ mainly using musical styles. Recommendations scoring below 0.1 are not shown;
 wantlist matches are shown regardless of score. Records you already own
 are skipped.
 
-**Search more** checks another batch of unseen records. Once the current pages
-are exhausted, it reads up to 10 more pages. Results arrive as they’re scored,
-and Discogs responses are cached to speed up later searches.
+**Search more** scores another batch of unseen records from the scanned inventory.
+Results arrive as they’re scored, and Discogs responses are cached to speed up
+later searches. Large inventories take longer to scan on the first search;
+progress shows the current page and the total page count.
+
+Discogs blocks pages above 100 for inventories other than your own. At 100
+listings per page, this limits the scan to 10,000 listings per seller. For
+larger sellers, the app shows a notice: wantlist matches and recommendations
+are incomplete, and **Search more** only scores remaining records within the
+accessible pages.
 
 
 ## Recommendation approach
@@ -49,19 +57,20 @@ Create a `.env` file in that folder with your Discogs personal access token:
 DISCOGS_TOKEN=your_token_here
 ```
 
-Start the backend:
+Install the frontend dependencies once:
 
 ```sh
-uvicorn app.api:app --reload
+npm install --prefix frontend
 ```
 
-In another terminal, start the frontend:
+Then start both the backend and frontend with one command from the project folder:
 
 ```sh
-cd frontend
-npm install
-npm run dev
+./run.sh
 ```
+
+Press **Ctrl+C** to stop both servers. The command uses `.venv` automatically,
+so you don’t need to activate it each time.
 
 Open **http://localhost:5173**. To save records to your wantlist, the configured
 token must belong to the username you searched for.
