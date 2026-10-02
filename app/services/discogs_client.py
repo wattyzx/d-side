@@ -1,7 +1,8 @@
 from dotenv import load_dotenv
 from dataclasses import asdict
 from app.services.cache_service import SQLiteCache
-from app.services.discogs_http import get_json
+from app.services.discogs_http import get_json, put_json
+from urllib.parse import quote
 from app.services.release_mapper import (
     discogs_to_release,
     collection_to_releases,
@@ -248,3 +249,18 @@ def search_releases_by_style_raw(
             "per_page": per_page,
         },
     )
+
+def add_to_wantlist(username: str, release_id: int) -> dict:
+    """Save to the token owner's wantlist and invalidate cached wantlists."""
+    identity = get_json("/oauth/identity")
+    owner = identity.get("username", "")
+    if not owner or owner.casefold() != username.strip().casefold():
+        raise PermissionError(
+            "The configured Discogs token must belong to the searched username."
+        )
+    result = put_json(
+        f"/users/{quote(owner, safe='')}/wants/{release_id}",
+        payload={"release_id": release_id},
+    )
+    cache.clear_namespace("wantlist_raw")
+    return result

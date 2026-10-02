@@ -1,4 +1,4 @@
-"""Shared pacing and bounded retries for Discogs GET requests."""
+"""Shared pacing and bounded retries for Discogs requests."""
 
 import math
 import os
@@ -69,6 +69,21 @@ def get_json(
     params: dict | None = None,
     min_interval: float = REQUEST_INTERVAL,
 ) -> dict:
+    return _request_json("GET", path, params=params, min_interval=min_interval)
+
+
+def put_json(path: str, *, payload: dict) -> dict:
+    return _request_json("PUT", path, payload=payload)
+
+
+def _request_json(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    payload: dict | None = None,
+    min_interval: float = REQUEST_INTERVAL,
+) -> dict:
     if not math.isfinite(min_interval) or min_interval < 0:
         raise ValueError("min_interval must be finite and non-negative")
 
@@ -83,9 +98,14 @@ def get_json(
     for attempt in range(MAX_ATTEMPTS):
         _pacer.wait(min_interval)
         try:
-            response = httpx.get(
-                f"{BASE_URL}{path}", headers=headers, params=params, timeout=10.0,
-            )
+            if method == "GET":
+                response = httpx.get(
+                    f"{BASE_URL}{path}", headers=headers, params=params, timeout=10.0,
+                )
+            else:
+                response = httpx.put(
+                    f"{BASE_URL}{path}", headers=headers, json=payload, timeout=10.0,
+                )
         except httpx.TransportError:
             if attempt == MAX_ATTEMPTS - 1:
                 raise

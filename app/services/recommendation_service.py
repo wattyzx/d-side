@@ -11,6 +11,7 @@ from app.services.recommender import (
     rank_inventory_items,
     rank_listings,
     select_candidates,
+    select_progressive_batch,
     score_release_breakdown,
 )
 from app.services.taste_service import build_taste_profile
@@ -22,6 +23,22 @@ from app.services.inventory_service import (
 
 SAMPLE_PAGE_LIMIT = 10
 FULL_SCORE_LIMIT = 30
+EXPLORATION_SIZE = 5
+
+
+def _select_candidate_batch(ranked, wantlist_ids, excluded_ids):
+    # Keep the entire eligible pool so exploration can reach lower ranks.
+    eligible = select_candidates(
+        ranked, wantlist_ids, excluded_ids, limit=len(ranked),
+    )
+    exploit, explore = select_progressive_batch(
+        eligible,
+        selected_ids=set(),
+        exploit_size=FULL_SCORE_LIMIT - EXPLORATION_SIZE,
+        explore_size=EXPLORATION_SIZE,
+    )
+    batch = exploit + explore
+    return batch, len(eligible) > len(batch)
 
 
 def recommend(
@@ -90,11 +107,10 @@ def recommend(
         collection_ids,
     )
 
-    candidates = select_candidates(
+    candidates, _ = _select_candidate_batch(
         ranked,
         wantlist_ids,
         collection_ids,
-        limit=FULL_SCORE_LIMIT,
     )
 
     # -------------------------
@@ -190,8 +206,14 @@ def _stream_event(event_type: str, **data) -> str:
 def recommend_stream(
     username: str,
     seller: str,
+    *,
+    exclude_release_ids: list[int] | None = None,
+    inventory_page_limit: int = SAMPLE_PAGE_LIMIT,
 ):
     try:
+        if inventory_page_limit < 1:
+            raise ValueError("inventory_page_limit must be positive")
+        excluded_ids = set(exclude_release_ids or [])
         # -------------------------
         # USER DATA
         # -------------------------
@@ -250,7 +272,7 @@ def recommend_stream(
                 1,
                 min(
                     reported_pages,
-                    SAMPLE_PAGE_LIMIT,
+                    inventory_page_limit,
                 ) + 1,
             )
         )
@@ -303,6 +325,7 @@ def recommend_stream(
                     in wantlist_ids
                     and listing.release_id
                     not in collection_ids
+                    and listing.release_id not in excluded_ids
                     and listing.release_id
                     not in wantlist_seen
                 ):
@@ -351,11 +374,15 @@ def recommend_stream(
             collection_ids,
         )
 
-        candidates = select_candidates(
+        candidates, more_candidates = _select_candidate_batch(
             ranked,
             wantlist_ids,
-            collection_ids,
-            limit=FULL_SCORE_LIMIT,
+            collection_ids | excluded_ids,
+        )
+        more_pages = len(sample_pages) < reported_pages
+        next_page_limit = (
+            inventory_page_limit if more_candidates
+            else min(reported_pages, inventory_page_limit + SAMPLE_PAGE_LIMIT)
         )
 
         yield _stream_event(
@@ -390,6 +417,8 @@ def recommend_stream(
         yield _stream_event(
             "done",
             recommendations=len(candidates),
+            has_more=more_candidates or more_pages,
+            next_inventory_page_limit=next_page_limit,
             wantlist_matches=len(
                 wantlist_seen
             ),

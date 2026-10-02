@@ -8,7 +8,7 @@ from app.models.user_taste import TasteProfile
 from app.services import inventory_service
 from app.services.recommender import (
     _year_scores, rank_listings, score_release, score_release_breakdown,
-    score_year, select_candidates,
+    score_year, select_candidates, select_progressive_batch,
 )
 from app.services.taste_service import count_artists
 
@@ -18,6 +18,30 @@ def listing(listing_id, release_id, summary=None):
 
 
 class RecommendationTests(unittest.TestCase):
+    def test_progressive_batch_explores_across_the_whole_remaining_pool(self):
+        ranked = [listing(i, i) for i in range(100)]
+        exploit, explore = select_progressive_batch(ranked, set())
+        self.assertEqual([item.release_id for item in exploit], list(range(25)))
+        self.assertEqual([item.release_id for item in explore], [32, 47, 62, 77, 92])
+        self.assertEqual(len({item.release_id for item in exploit + explore}), 30)
+
+    def test_progressive_batch_excludes_selected_releases_from_both_groups(self):
+        ranked = [listing(i, i) for i in range(100)]
+        selected = set(range(25)) | {32, 47, 62, 77, 92}
+        exploit, explore = select_progressive_batch(ranked, selected)
+        batch = exploit + explore
+        self.assertEqual(len(exploit), 25)
+        self.assertEqual(len(explore), 5)
+        self.assertFalse(selected & {item.release_id for item in batch})
+        self.assertEqual(selected, set(range(25)) | {32, 47, 62, 77, 92})
+
+    def test_progressive_batch_returns_all_available_when_fewer_than_30_remain(self):
+        for count in (0, 3, 25, 28, 30):
+            with self.subTest(count=count):
+                ranked = [listing(i, i) for i in range(count)]
+                exploit, explore = select_progressive_batch(ranked, set())
+                self.assertEqual(exploit + explore, ranked)
+
     def test_style_match_is_the_musical_match_when_styles_are_available(self):
         taste = TasteProfile(styles={"House": 1}, genres={"Electronic": 1})
         release = Release(1, "House record", styles=["House"], genres=["Electronic"])

@@ -31,12 +31,16 @@ export type StreamEvent = {
   recommendation?: Recommendation;
 
   recommendations?: number;
+  has_more?: boolean;
+  next_inventory_page_limit?: number;
 
   [key: string]: unknown;
 };
 
 type StreamCallbacks = {
   onEvent?: (event: StreamEvent) => void;
+  excludeReleaseIds?: number[];
+  inventoryPageLimit?: number;
 };
 
 export function sortRecommendations(
@@ -64,6 +68,8 @@ export async function getRecommendations(
       body: JSON.stringify({
         username,
         seller,
+        exclude_release_ids: callbacks.excludeReleaseIds ?? [],
+        inventory_page_limit: callbacks.inventoryPageLimit ?? 10,
       }),
     },
   );
@@ -125,5 +131,21 @@ export async function getRecommendations(
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
+  }
+}
+
+export async function addToWantlist(username: string, releaseId: number): Promise<void> {
+  const response = await fetch("http://127.0.0.1:8000/wantlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, release_id: releaseId }),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new Error(
+      typeof error?.detail === "string"
+        ? error.detail
+        : "Could not add this record to your wantlist. Please try again.",
+    );
   }
 }

@@ -276,5 +276,41 @@ class DiscogsRequestTests(unittest.TestCase):
                 discogs_http.get_json("/test")
         self.http_get.assert_not_called()
 
+    def test_add_to_wantlist_verifies_owner_and_invalidates_cache(self):
+        discogs_client.cache.set("wantlist_raw", "Owner:1:100", {"wants": []})
+        self.responses = iter([response(data={"username": "Owner"})])
+        with patch.object(discogs_http.httpx, "put", return_value=response(201)) as put:
+            discogs_client.add_to_wantlist("owner", 123)
+        self.assertEqual(put.call_args.args[0], "https://api.discogs.com/users/Owner/wants/123")
+        self.assertEqual(put.call_args.kwargs["json"], {"release_id": 123})
+        self.assertEqual(put.call_args.kwargs["headers"]["Authorization"], "Discogs token=test-token")
+        self.assertAlmostEqual(self.now, 1.1)
+        self.assertIsNone(discogs_client.cache.get("wantlist_raw", "Owner:1:100"))
+
+    def test_add_to_wantlist_rejects_other_users_without_writing(self):
+        self.responses = iter([response(data={"username": "Owner"})])
+        with patch.object(discogs_http.httpx, "put") as put:
+            with self.assertRaises(PermissionError):
+                discogs_client.add_to_wantlist("SomeoneElse", 123)
+        put.assert_not_called()
+
+    def test_failed_wantlist_save_preserves_cached_wantlist(self):
+        discogs_client.cache.set("wantlist_raw", "Owner:1:100", {"wants": []})
+        self.responses = iter([response(data={"username": "Owner"})])
+        with patch.object(discogs_http.httpx, "put", return_value=response(403)) as put:
+            with self.assertRaises(httpx.HTTPStatusError):
+                discogs_client.add_to_wantlist("Owner", 123)
+        self.assertEqual(put.call_count, 1)
+        self.assertEqual(discogs_client.cache.get("wantlist_raw", "Owner:1:100"), {"wants": []})
+
+    def test_wantlist_put_retries_rate_limits_with_shared_pacing(self):
+        with patch.object(discogs_http.httpx, "put", side_effect=[
+            response(429, headers={"Retry-After": "5"}), response(201),
+        ]) as put:
+            discogs_http.put_json("/users/Owner/wants/123", payload={"release_id": 123})
+        self.assertEqual(put.call_count, 2)
+        self.assertEqual(self.now, 5)
+
+
 if __name__ == "__main__":
     unittest.main()
