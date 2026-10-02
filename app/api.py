@@ -1,19 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from app.services.recommendation_service import recommend
-
-
-app = FastAPI(
-    title="D(e)Side API",
-    version="1.0.0",
+from app.services.recommendation_service import (
+    recommend,
+    recommend_stream,
 )
 
 app = FastAPI(
     title="D(e)Side API",
     version="1.0.0",
 )
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -57,3 +56,15 @@ def recommend_endpoint(
             status_code=502,
             detail=f"Recommendation failed: {exc}",
         ) from exc
+
+@app.post("/recommend/stream")
+def recommend_stream_endpoint(
+    request: RecommendRequest,
+):
+    return StreamingResponse(
+        recommend_stream(
+            username=request.username,
+            seller=request.seller,
+        ),
+        media_type="application/x-ndjson",
+    )

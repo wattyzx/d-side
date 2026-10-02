@@ -1,21 +1,72 @@
-import type { RecommendationResponse } from "../types/recommendation";
+export type Recommendation = {
+  listing_id: number;
+  release_id: number;
+  title: string;
+  artists: string[];
+  labels: string[];
+  year: number | null;
+  genres: string[];
+  styles: string[];
+  price: number;
+  currency: string;
+  condition: string;
+  sleeve_condition: string | null;
+  score: number;
+  score_breakdown: Record<string, number>;
+};
 
-const API_URL = "http://127.0.0.1:8000";
+export type StreamEvent = {
+  type: string;
+  message?: string;
+
+  username?: string;
+  seller?: string;
+
+  page?: number;
+  pages?: number;
+  listings?: number;
+  processed?: number;
+  candidates?: number;
+
+  recommendation?: Recommendation;
+
+  recommendations?: number;
+
+  [key: string]: unknown;
+};
+
+type StreamCallbacks = {
+  onEvent?: (event: StreamEvent) => void;
+};
+
+export function sortRecommendations(
+  recommendations: Recommendation[],
+): Recommendation[] {
+  return [...recommendations].sort(
+    (a, b) =>
+      (b.score_breakdown.total ?? b.score) -
+      (a.score_breakdown.total ?? a.score),
+  );
+}
 
 export async function getRecommendations(
   username: string,
   seller: string,
-): Promise<RecommendationResponse> {
-  const response = await fetch(`${API_URL}/recommend`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  callbacks: StreamCallbacks = {},
+): Promise<Recommendation[]> {
+  const response = await fetch(
+    "http://127.0.0.1:8000/recommend/stream",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username,
+        seller,
+      }),
     },
-    body: JSON.stringify({
-      username,
-      seller,
-    }),
-  });
+  );
 
   if (!response.ok) {
     throw new Error(
@@ -23,5 +74,56 @@ export async function getRecommendations(
     );
   }
 
-  return response.json();
+  if (!response.body) {
+    throw new Error("Streaming response is not available");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  let buffer = "";
+  const recommendations: Recommendation[] = [];
+
+  function handleLine(line: string): boolean {
+    if (!line.trim()) return false;
+    const event = JSON.parse(line) as StreamEvent;
+    callbacks.onEvent?.(event);
+
+    if (event.type === "recommendation" && event.recommendation) {
+      recommendations.push(event.recommendation);
+    }
+    if (event.type === "error") {
+      throw new Error(event.message ?? "Recommendation failed");
+    }
+    return event.type === "done";
+  }
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+
+      if (done) {
+        buffer += decoder.decode();
+        if (handleLine(buffer)) return sortRecommendations(recommendations);
+        throw new Error("Recommendation stream ended before completion");
+      }
+
+      buffer += decoder.decode(value, {
+        stream: true,
+      });
+
+      const lines = buffer.split("\n");
+
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (handleLine(line)) {
+          return sortRecommendations(recommendations);
+        }
+      }
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
 }
