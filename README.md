@@ -3,18 +3,19 @@
 **Decide what to dig.**
 
 D(e)Side helps you find records you might like in a Discogs seller’s inventory.
-It uses your collection tosuggest what to check out next.
-Your wantlist matches appear immediatly while the suggestions are displayed as they come
+It uses your collection to suggest what to check out next.
+Wantlist matches appear as the inventory is scanned, and recommendations appear
+as they are scored.
 You can open each record on Discogs or add it straight to your wantlist.
 
 ## How it works
 
-Each search reads all accessible pages of the seller’s inventory and shows wantlist
-matches as they’re found. It picks
-25 promising records based on artist, label, year, and demand, plus 5 from
+Each search scans up to 100 pages of the seller’s inventory and shows wantlist
+matches as they’re found. It selects up to 25 promising records based on artist,
+label, year, and demand, plus up to 5 from
 across the remaining list to give less obvious matches a chance.
 It then loads their full details and scores them against your collection,
-mainly using musical styles. Recommendations scoring below 0.1 are not shown;
+mainly using musical styles. Only recommendations scoring above 0.1 are shown;
 wantlist matches are shown regardless of score. Records you already own
 are skipped.
 
@@ -29,9 +30,10 @@ larger sellers, the app shows a notice: wantlist matches and recommendations
 are incomplete, and **Search more** only scores remaining records within the
 accessible pages.
 
-
 ## Recommendation approach
-The first recommender will compare a user's taste profile with the metadata of each release available in a seller's inventory. For example, the system may consider:
+
+The recommender builds a taste profile from your collection and compares it with
+release metadata. It uses:
 
 - genres
 - styles
@@ -75,6 +77,25 @@ so you don’t need to activate it each time.
 Open **http://localhost:5173**. To save records to your wantlist, the configured
 token must belong to the username you searched for.
 
+## Run tests
+
+From the project folder, run the Python tests with the standard-library
+`unittest` runner:
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+Run the frontend tests, build, and lint checks with:
+
+```sh
+npm test --prefix frontend
+npm run build --prefix frontend
+npm run lint --prefix frontend
+```
+
+The automated tests use mocked Discogs responses and do not require a live token.
+
 ## Known limitation: candidate generation
 The current lightweight pre-ranking stage uses metadata already available in Discogs Marketplace listings, mainly:
 
@@ -82,13 +103,17 @@ The current lightweight pre-ranking stage uses metadata already available in Dis
 - label
 - year
 
-However, the most discriminating recommendation signal observed so far is style, which is not included in Marketplace listing summaries.
+The full scoring stage relies mainly on musical styles, which are not included
+in Marketplace listing summaries. As a result, pre-ranking can miss records
+that would score well once their full metadata is loaded.
 
 ## What’s next
 
-Discogs login so each person can connect their own account, and better ways to
-find matches that the first ranking might miss. This version uses Discogs
-metadata and a scoring formula.
+Planned improvements include Discogs login so each person can connect their own
+account, and better candidate selection to find matches that pre-ranking might
+miss. The current version uses Discogs metadata and a deterministic scoring
+formula.
 
-**Better engine option**
-The engine may combine metadata such as years and styles. Using recourring years of particular style, may have a better understandig of the user'style. To do so building prototypes or selecting rappresentative records in the collection could be useful.
+One possible direction is to model styles and release years together, capturing
+preferences for particular years within a style. Representative records or
+clusters from the collection could help describe those preferences.
