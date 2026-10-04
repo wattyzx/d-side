@@ -114,6 +114,4 @@ account, and better candidate selection to find matches that pre-ranking might
 miss. The current version uses Discogs metadata and a deterministic scoring
 formula.
 
-One possible direction is to model styles and release years together, capturing
-preferences for particular years within a style. Representative records or
-clusters from the collection could help describe those preferences.
+**Style pre-ranking:** Explore predicting likely musical styles from artist, label, and release year using releases with known styles. Compare this approach with the current pre-ranker to see whether it selects better candidates within the same request budget. Final scoring would continue to use actual Discogs styles.
