@@ -1,4 +1,5 @@
 import json
+from math import ceil
 
 from app.services.discogs_client import (
     get_collection,
@@ -283,6 +284,9 @@ def recommend_stream(
         listings = []
 
         wantlist_seen = set()
+        scored_ids = set()
+        more_candidates = False
+        exploit_limit = FULL_SCORE_LIMIT - EXPLORATION_SIZE
 
         for page in sample_pages:
 
@@ -304,6 +308,43 @@ def recommend_stream(
             listings.extend(
                 page_listings
             )
+
+            # Spread the top-candidate budget across the scan, starting on
+            # page 1. Reserve exploration for the complete accessible pool.
+            ranked = rank_listings(listings, taste, collection_ids)
+            eligible = select_candidates(
+                ranked, wantlist_ids,
+                collection_ids | excluded_ids | scored_ids,
+                limit=len(ranked),
+            )
+            final_page = page == len(sample_pages)
+            target = ceil(exploit_limit * page / len(sample_pages))
+            candidates, exploration = select_progressive_batch(
+                eligible,
+                selected_ids=set(),
+                exploit_size=max(0, target - len(scored_ids)),
+                explore_size=EXPLORATION_SIZE if final_page else 0,
+            )
+            candidates += exploration
+            total_candidates = len(scored_ids) + len(candidates)
+            if final_page:
+                more_candidates = len(eligible) > len(candidates)
+                yield _stream_event(
+                    "pre_rank_complete", candidates=total_candidates,
+                )
+
+            # Yield each score before fetching another release or enriching
+            # wantlist matches, so neither can hold back a ready result.
+            for listing in candidates:
+                item = link_listing(listing)
+                scored_ids.add(listing.release_id)
+                yield _stream_event(
+                    "recommendation",
+                    processed=len(scored_ids),
+                    candidates=total_candidates if final_page else FULL_SCORE_LIMIT,
+                    inventory_scanning=not final_page,
+                    recommendation=_recommendation_payload(item, taste),
+                )
 
             # -------------------------
             # WANTLIST MATCHES
@@ -354,57 +395,12 @@ def recommend_stream(
         )
 
         # -------------------------
-        # PRE-RANK
-        # -------------------------
-
-        yield _stream_event(
-            "status",
-            message="Ranking candidates",
-        )
-
-        ranked = rank_listings(
-            listings,
-            taste,
-            collection_ids,
-        )
-
-        candidates, more_candidates = _select_candidate_batch(
-            ranked,
-            wantlist_ids,
-            collection_ids | excluded_ids,
-        )
-        yield _stream_event(
-            "pre_rank_complete",
-            candidates=len(candidates),
-        )
-
-        # -------------------------
-        # ENRICHMENT
-        # -------------------------
-
-        yield _stream_event(
-            "status",
-            message="Loading release details",
-        )
-
-        # Enrich and score one candidate at a time so the first result does
-        # not have to wait for every Discogs release request to finish.
-        for index, listing in enumerate(candidates, start=1):
-            item = link_listing(listing)
-            yield _stream_event(
-                "recommendation",
-                processed=index,
-                candidates=len(candidates),
-                recommendation=_recommendation_payload(item, taste),
-            )
-
-        # -------------------------
         # DONE
         # -------------------------
 
         yield _stream_event(
             "done",
-            recommendations=len(candidates),
+            recommendations=len(scored_ids),
             has_more=more_candidates,
             next_inventory_page_limit=len(sample_pages),
             inventory_truncated=inventory_truncated,

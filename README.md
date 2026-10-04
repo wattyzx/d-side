@@ -10,10 +10,12 @@ You can open each record on Discogs or add it straight to your wantlist.
 
 ## How it works
 
-Each search scans up to 100 pages of the seller’s inventory and shows wantlist
-matches as they’re found. It selects up to 25 promising records based on artist,
-label, year, and demand, plus up to 5 from
-across the remaining list to give less obvious matches a chance.
+Each search scans up to 100 pages of the seller’s inventory. Recommendations
+start arriving from the first page with eligible records. As the scan progresses, it selects up to 25 promising
+records based on artist, label, year, and demand. After reaching the last page,
+it selects up to 5 from across the remaining list to give less obvious matches
+a chance. Early selections use the inventory scanned so far, so they can differ
+from the top candidates of a complete inventory scan.
 It then loads their full details and scores them against your collection,
 mainly using musical styles. Only recommendations scoring above 0.1 are shown;
 wantlist matches are shown regardless of score. Records you already own

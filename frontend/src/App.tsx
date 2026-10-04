@@ -78,7 +78,9 @@ function App() {
         );
 
         setStatus(
-          `Scored ${event.processed} of ${event.candidates} recommendations`,
+          event.inventory_scanning
+            ? `Scored ${event.processed} recommendations — continuing inventory scan`
+            : `Scored ${event.processed} of ${event.candidates} recommendations`,
         );
       }
     }

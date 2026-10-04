@@ -27,6 +27,7 @@ export type StreamEvent = {
   listings?: number;
   processed?: number;
   candidates?: number;
+  inventory_scanning?: boolean;
 
   recommendation?: Recommendation;
 

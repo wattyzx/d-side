@@ -138,16 +138,63 @@ class RecommendationServiceTests(unittest.TestCase):
                 event for line in stream
                 if (event := json.loads(line))["type"] == "recommendation"
             )
-            self.assertEqual(loaded, [2, 3])
+            self.assertEqual(loaded, [3])
             self.assertEqual(first["recommendation"]["release_id"], 3)
             self.assertEqual(first["processed"], 1)
             self.assertEqual(first["candidates"], 2)
             remaining = [json.loads(line) for line in stream]
 
-        self.assertEqual(loaded, [2, 3, 4])
+        self.assertEqual(loaded, [3, 4, 2])
         self.assertEqual(remaining[0]["type"], "recommendation")
         self.assertEqual(remaining[0]["processed"], 2)
         self.assertEqual(remaining[-1]["recommendations"], 2)
+
+    def test_first_recommendation_does_not_wait_for_wants_or_later_pages(self):
+        first_page = {**self.inventory, "pagination": {"pages": 100}}
+        original_link = service.link_listing
+        with patch.object(service, "get_inventory_raw", return_value=first_page) as fetch, \
+                patch.object(service, "link_listing", wraps=original_link) as link:
+            stream = service.recommend_stream("user", "seller")
+            events = []
+            for line in stream:
+                event = json.loads(line)
+                events.append(event)
+                if event["type"] == "recommendation":
+                    break
+            self.assertEqual(events[-1]["type"], "recommendation")
+            self.assertEqual(events[-1]["recommendation"]["release_id"], 3)
+            self.assertTrue(events[-1]["inventory_scanning"])
+            self.assertEqual([call.kwargs["page"] for call in fetch.call_args_list], [1])
+            self.assertEqual([call.args[0].release_id for call in link.call_args_list], [3])
+            self.assertFalse(any(event["type"] in ("wantlist", "inventory_complete")
+                                 for event in events))
+            stream.close()
+
+    def test_empty_early_pages_keep_budget_for_late_candidates(self):
+        for release_id in range(4, 43):
+            self.releases[release_id] = Release(
+                id=release_id, title=f"Release {release_id}", artists=["Artist"],
+                labels=["Label"], genres=["Electronic"], styles=["House"], year=2000,
+            )
+            self.inventory["listings"].append({
+                "id": 100 + release_id, "release": {"id": release_id, "artist": "Artist"},
+                "price": {"value": 10, "currency": "EUR"}, "condition": "Mint (M)",
+            })
+
+        def inventory(*args, page=1, **kwargs):
+            return {
+                "pagination": {"pages": 3},
+                "listings": self.inventory["listings"] if page == 3 else [],
+            }
+
+        with patch.object(service, "get_inventory_raw", side_effect=inventory):
+            events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        ids = [event["recommendation"]["release_id"] for event in events
+               if event["type"] == "recommendation"]
+        self.assertEqual(len(ids), 30)
+        self.assertEqual(len(set(ids)), 30)
+        self.assertEqual(ids[:25], list(range(3, 28)))
+        self.assertTrue(events[-1]["has_more"])
 
     def test_stream_matches_regular_scores_after_sorting(self):
         self.releases[4] = Release(
