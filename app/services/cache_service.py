@@ -2,6 +2,7 @@ import hashlib
 import json
 import sqlite3
 import time
+from contextlib import contextmanager
 
 from pathlib import Path
 from typing import Any, Callable
@@ -27,14 +28,19 @@ class SQLiteCache:
         self._initialize()
 
 
+    @contextmanager
     def _connect(self):
-        return sqlite3.connect(
-            self.db_path
-        )
+        connection = sqlite3.connect(self.db_path, timeout=10)
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
 
     def _initialize(self):
         with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache_entries (
@@ -50,6 +56,10 @@ class SQLiteCache:
                 )
                 """
             )
+            connection.execute("CREATE INDEX IF NOT EXISTS cache_expiry ON cache_entries(expires_at)")
+            connection.execute("""CREATE TABLE IF NOT EXISTS cache_namespaces (
+                namespace TEXT PRIMARY KEY, version INTEGER NOT NULL
+            )""")
 
 
     def get(
@@ -86,19 +96,6 @@ class SQLiteCache:
                 expires_at is not None
                 and expires_at <= now
             ):
-                connection.execute(
-                    """
-                    DELETE FROM cache_entries
-                    WHERE
-                        namespace = ?
-                        AND cache_key = ?
-                    """,
-                    (
-                        namespace,
-                        cache_key,
-                    ),
-                )
-
                 return None
 
         return json.loads(
@@ -112,7 +109,10 @@ class SQLiteCache:
         cache_key: str,
         value: Any,
         ttl_seconds: int | None = None,
-    ):
+        *,
+        expected_version: int | None = None,
+    ) -> bool:
+        """Store a response, optionally only if its namespace was not invalidated."""
         if (
             ttl_seconds is not None
             and ttl_seconds <= 0
@@ -136,6 +136,12 @@ class SQLiteCache:
         )
 
         with self._connect() as connection:
+            if expected_version is not None:
+                # Serialize the version check and write with invalidation.
+                # No transaction is held while the caller fetches upstream data.
+                connection.execute("BEGIN IMMEDIATE")
+                if self._namespace_version(connection, namespace) != expected_version:
+                    return False
             connection.execute(
                 """
                 INSERT INTO cache_entries (
@@ -164,6 +170,21 @@ class SQLiteCache:
                     expires_at,
                 ),
             )
+        return True
+
+
+    @staticmethod
+    def _namespace_version(connection, namespace: str) -> int:
+        row = connection.execute(
+            "SELECT version FROM cache_namespaces WHERE namespace = ?", (namespace,),
+        ).fetchone()
+        return row[0] if row else 0
+
+
+    def namespace_version(self, namespace: str) -> int:
+        """Capture an invalidation version before beginning an upstream fetch."""
+        with self._connect() as connection:
+            return self._namespace_version(connection, namespace)
 
 
     def delete(
@@ -191,6 +212,11 @@ class SQLiteCache:
         namespace: str,
     ):
         with self._connect() as connection:
+            # Bump and delete in one transaction, including for an empty cache.
+            connection.execute("""
+                INSERT INTO cache_namespaces (namespace, version) VALUES (?, 1)
+                ON CONFLICT(namespace) DO UPDATE SET version = version + 1
+            """, (namespace,))
             connection.execute(
                 """
                 DELETE FROM cache_entries

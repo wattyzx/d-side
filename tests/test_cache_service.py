@@ -368,6 +368,32 @@ class CacheServiceTests(unittest.TestCase):
                 ttl_seconds=0,
             )
 
+    def test_invalidation_rejects_old_fetches_across_instances_without_overwriting_fresh_data(self):
+        namespace = "wantlist_raw:alice"
+        old_version = self.cache.namespace_version(namespace)
+        other = SQLiteCache(self.db_path, clock=self.clock)
+        # Invalidation must advance the version even when there are no rows.
+        other.clear_namespace(namespace)
+        self.assertFalse(self.cache.set(namespace, "page1", {"old": True}, expected_version=old_version))
+        self.assertIsNone(other.get(namespace, "page1"))
+        version = other.namespace_version(namespace)
+        self.assertTrue(other.set(namespace, "page1", {"fresh": True}, expected_version=version))
+        self.assertFalse(self.cache.set(namespace, "page1", {"old": True}, expected_version=old_version))
+        self.assertEqual(self.cache.get(namespace, "page1"), {"fresh": True})
+        other.clear_namespace(namespace)
+        self.assertFalse(self.cache.set(namespace, "page2", {}, expected_version=version))
+
+    def test_invalidation_versions_survive_cleanup_and_are_isolated_by_namespace(self):
+        alice, bob = "wantlist_raw:alice", "wantlist_raw:bob"
+        before = self.cache.namespace_version(alice)
+        bob_version = self.cache.namespace_version(bob)
+        self.cache.clear_namespace(alice)
+        self.clock.advance(21600)
+        self.cache.clear_expired()
+        reopened = SQLiteCache(self.db_path, clock=self.clock)
+        self.assertFalse(reopened.set(alice, "page1", {}, expected_version=before))
+        self.assertTrue(reopened.set(bob, "page1", {}, expected_version=bob_version))
+
 
 if __name__ == "__main__":
     unittest.main()

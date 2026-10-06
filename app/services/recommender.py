@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from functools import lru_cache
 from math import log1p
 from app.models.listing import Listing
@@ -5,10 +6,54 @@ from app.models.user_taste import TasteProfile
 from app.models.inventory_item import InventoryItem
 from app.models.release import Release
 from app.services.generic_metadata import is_generic_artist, is_generic_label
+from app.services.search_control import check_cancelled
 
 DEMAND_SMOOTHING = 20
 DEMAND_BONUS_WEIGHT = 0.30
 GENRE_FALLBACK_WEIGHT = 0.25
+
+
+@dataclass(frozen=True)
+class PreparedTaste:
+    """Normalized preference snapshot, prepared once for a recommendation run."""
+
+    artists: dict[str, float]
+    labels: dict[str, float]
+    styles: dict[str, float]
+    genres: dict[str, float]
+    years: dict[int, float]
+
+
+def _normalized_preferences(preferences, is_generic=None):
+    filtered = {}
+    for value, count in preferences.items():
+        check_cancelled()
+        if is_generic is None or not is_generic(value):
+            filtered[value] = count
+    maximum = max(filtered.values(), default=0)
+    if maximum == 0:
+        return {}
+    return {value: count / maximum for value, count in filtered.items()}
+
+
+def prepare_taste(taste: TasteProfile | PreparedTaste) -> PreparedTaste:
+    check_cancelled()
+    if isinstance(taste, PreparedTaste):
+        return taste
+    return PreparedTaste(
+        artists=_normalized_preferences(taste.artists, is_generic_artist),
+        labels=_normalized_preferences(taste.labels, is_generic_label),
+        styles=_normalized_preferences(taste.styles),
+        genres=_normalized_preferences(taste.genres),
+        years=_year_scores(tuple(sorted(taste.years.items()))),
+    )
+
+
+def _average_preference(values, preferences):
+    if not values or not preferences:
+        return 0.0
+    return sum(preferences.get(value, 0.0) for value in values) / len(values)
+
 
 def score_preference(
     value: str | int | None,
@@ -30,27 +75,17 @@ def score_preference(
 
 def pre_score_listing(
     listing: Listing,
-    taste: TasteProfile,
+    taste: TasteProfile | PreparedTaste,
 ) -> float:
-
+    taste = prepare_taste(taste)
     summary = listing.release_summary
 
     if summary is None:
         return 0.0
 
-    artist_score = score_artists(
-        [summary.artist] if summary.artist is not None else [],
-        taste.artists,
-    )
-    label_score = score_labels(
-        [summary.label] if summary.label is not None else [],
-        taste.labels,
-    )
-
-    year_score = score_year(
-        summary.year,
-        taste.years,
-    )
+    artist_score = taste.artists.get(summary.artist, 0.0)
+    label_score = taste.labels.get(summary.label, 0.0)
+    year_score = taste.years.get(summary.year, 0.0)
 
     return (
         artist_score * 0.50
@@ -58,65 +93,48 @@ def pre_score_listing(
         + year_score * 0.20
     )
 
+class ListingRanker:
+    """Retain base scores across pages while updating inventory-wide demand."""
+
+    def __init__(self, taste: TasteProfile | PreparedTaste, collection_ids: set[int]):
+        self.taste = prepare_taste(taste)
+        self.collection_ids = collection_ids
+        self.listings: list[Listing] = []
+        self.taste_scores: dict[int, float] = {}
+        self.demand_scores: dict[int, float] = {}
+
+    def add(self, listings: list[Listing]):
+        for listing in listings:
+            check_cancelled()
+            if listing.release_id in self.collection_ids:
+                continue
+            self.listings.append(listing)
+            # Preserve the existing last-copy metadata rule for a release;
+            # stable sorting still chooses the first listing when scores tie.
+            self.taste_scores[listing.release_id] = pre_score_listing(listing, self.taste)
+            self.demand_scores[listing.release_id] = score_demand(listing)
+
+    def ranked(self) -> list[tuple[Listing, float]]:
+        check_cancelled()
+        maximum = max(self.demand_scores.values(), default=0.0)
+        ranked = []
+        for listing in self.listings:
+            check_cancelled()
+            demand = self.demand_scores[listing.release_id] / maximum if maximum > 0 else 0.0
+            ranked.append((listing, score_candidate(self.taste_scores[listing.release_id], demand)))
+        ranked.sort(key=lambda item: (-item[1], item[0].release_id))
+        check_cancelled()
+        return ranked
+
+
 def rank_listings(
     listings: list[Listing],
-    taste: TasteProfile,
+    taste: TasteProfile | PreparedTaste,
     collection_ids: set[int],
 ) -> list[tuple[Listing, float]]:
-
-    candidates = [
-        listing
-        for listing in listings
-        if listing.release_id
-        not in collection_ids
-    ]
-
-    # Pre-scores are already bounded to [0, 1]; preserve their absolute strength.
-    taste_scores = {
-        listing.release_id:
-            pre_score_listing(
-                listing,
-                taste,
-            )
-        for listing in candidates
-    }
-
-    raw_demand_scores = {
-        listing.release_id:
-            score_demand(
-                listing
-            )
-        for listing in candidates
-    }
-
-    demand_scores = normalize_scores(
-        raw_demand_scores
-    )
-
-    ranked = [
-        (
-            listing,
-            score_candidate(
-                taste_scores.get(
-                    listing.release_id,
-                    0.0,
-                ),
-                demand_scores.get(
-                    listing.release_id,
-                    0.0,
-                ),
-            ),
-        )
-        for listing in candidates
-    ]
-
-    return sorted(
-        ranked,
-        key=lambda item: (
-            -item[1],
-            item[0].release_id,
-        ),
-    )
+    ranker = ListingRanker(taste, collection_ids)
+    ranker.add(listings)
+    return ranker.ranked()
 
 def select_candidates(
     ranked_listings: list[tuple[Listing, float]],
@@ -136,6 +154,7 @@ def select_candidates(
     candidates = []
     seen = wantlist_ids | collection_ids
     for listing, _ in ranked_listings:
+        check_cancelled()
         if listing.release_id in seen:
             continue
         seen.add(listing.release_id)
@@ -168,7 +187,7 @@ def score_values(
 
 def score_release(
     release: Release,
-    taste: TasteProfile,
+    taste: TasteProfile | PreparedTaste,
 ) -> float:
     
     """
@@ -180,10 +199,11 @@ def score_release(
 
 def rank_inventory_items(
     items: list[InventoryItem],
-    taste: TasteProfile,
+    taste: TasteProfile | PreparedTaste,
 ) -> list[tuple[InventoryItem, float]]:
     """Rank seller items using the full recommendation score."""
 
+    taste = prepare_taste(taste)
     scored = [
         (item, score_release(item.release, taste))
         for item in items
@@ -200,6 +220,7 @@ def _year_scores(preferences: tuple[tuple[int, int], ...]) -> dict[int, float]:
     """Compute the normalized year lookup once per profile snapshot."""
     scores: dict[int, float] = {}
     for preferred_year, count in preferences:
+        check_cancelled()
         for offset in range(-3, 4):
             year = preferred_year + offset
             scores[year] = scores.get(year, 0.0) + count * (1 - abs(offset) / 4)
@@ -222,18 +243,15 @@ def score_year(
 
 def score_release_breakdown(
     release: Release,
-    taste: TasteProfile,
+    taste: TasteProfile | PreparedTaste,
 ) -> dict[str, float]:
+    taste = prepare_taste(taste)
+    style_score = 0.0
+    for style in release.styles:
+        check_cancelled()
+        style_score = 1 - (1 - style_score) * (1 - taste.styles.get(style, 0.0) * 0.60)
 
-    style_score = score_styles(
-        release.styles,
-        taste.styles,
-    )
-
-    genre_score = score_values(
-        release.genres,
-        taste.genres,
-    )
+    genre_score = _average_preference(release.genres, taste.genres)
     # Use genre as weak evidence only when a style comparison is unavailable.
     # Present but unmatched styles must not receive the genre fallback.
     musical_match = (
@@ -242,20 +260,17 @@ def score_release_breakdown(
         else GENRE_FALLBACK_WEIGHT * genre_score
     )
 
-    artist_score = score_artists(
-        release.artists,
+    artist_score = _average_preference(
+        [artist for artist in release.artists if not is_generic_artist(artist)],
         taste.artists,
     )
 
-    label_score = score_labels(
-        release.labels,
+    label_score = _average_preference(
+        [label for label in release.labels if not is_generic_label(label)],
         taste.labels,
     )
 
-    year_score = score_year(
-        release.year,
-        taste.years,
-    )
+    year_score = taste.years.get(release.year, 0.0)
 
     # Supporting metadata can contribute at most 0.35 of the remaining score.
     bonus = (

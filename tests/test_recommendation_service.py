@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app.models.inventory_item import InventoryItem
 from app.models.release import Release
 from app.services import recommendation_service as service
+from app.services import recommender
 from app.services.release_mapper import inventory_to_listings
 
 
@@ -195,6 +196,23 @@ class RecommendationServiceTests(unittest.TestCase):
         self.assertEqual(len(set(ids)), 30)
         self.assertEqual(ids[:25], list(range(3, 28)))
         self.assertTrue(events[-1]["has_more"])
+
+    def test_long_scan_prepares_preferences_once_and_scores_only_new_listings(self):
+        def inventory(*args, page=1, **kwargs):
+            release_id = 100 + page
+            self.releases[release_id] = Release(release_id, f"Release {release_id}", styles=["House"])
+            return {"pagination": {"pages": 100}, "listings": [{
+                "id": page, "release": {"id": release_id, "artist": "Artist"},
+                "price": {"value": 10, "currency": "EUR"}, "condition": "Mint (M)",
+            }]}
+        with patch.object(service, "get_inventory_raw", side_effect=inventory), \
+             patch.object(recommender, "_normalized_preferences", wraps=recommender._normalized_preferences) as prepare, \
+             patch.object(recommender, "pre_score_listing", wraps=recommender.pre_score_listing) as score:
+            events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertEqual(events[-1]["recommendations"], 30)
+        self.assertEqual(score.call_count, 100)
+        self.assertEqual(prepare.call_count, 4)  # Artist, label, style, and genre lookups.
 
     def test_stream_matches_regular_scores_after_sorting(self):
         self.releases[4] = Release(

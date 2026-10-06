@@ -1,8 +1,12 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import AccountControls from "./AccountControls";
+import { getAccount } from "./api/auth";
+import { accountQueryKey, session } from "./session";
 
 import {
   addToWantlist,
+  cancelSearch,
   getRecommendations,
   sortRecommendations,
   type Recommendation,
@@ -10,8 +14,18 @@ import {
 } from "./api/recommendations";
 
 function App() {
-  const [username, setUsername] = useState("");
+  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot);
+  // Unmount account-specific state and callbacks whenever a session ends.
+  return <RecommendationApp key={snapshot.revision} sessionExpired={snapshot.expired} />;
+}
+
+function RecommendationApp({ sessionExpired }: { sessionExpired: boolean }) {
+  const account = useQuery({ queryKey: accountQueryKey, queryFn: getAccount, retry: false });
+  const username = account.data?.username ?? "";
   const [seller, setSeller] = useState("");
+  const activeRequest = useRef<{ id: string; controller: AbortController } | null>(null);
+  const cancelling = useRef(false);
+  useEffect(() => () => { activeRequest.current?.controller.abort(); }, []);
 
   const [recommendations, setRecommendations] = useState<
     Recommendation[]
@@ -32,17 +46,55 @@ function App() {
       username: string;
       seller: string;
       excludeReleaseIds: number[];
-    }) => getRecommendations(search.username, search.seller, {
+      searchId: string;
+      signal: AbortSignal;
+    }) => getRecommendations(search.seller, {
       onEvent: handleStreamEvent,
       excludeReleaseIds: search.excludeReleaseIds,
+      searchId: search.searchId,
+      signal: search.signal,
     }),
-    onError: () => {
+    onError: (_, search) => {
+      if (search.signal.aborted) return;
       setStatus("Stopped before completion. Search more to continue.");
+    },
+    onSettled: (_, __, search) => {
+      if (!cancelling.current && activeRequest.current?.id === search.searchId) {
+        activeRequest.current = null;
+      }
     },
   });
 
+  const cancelMutation = useMutation({
+    mutationFn: cancelSearch,
+    onSuccess: () => { setStatus("Search cancelled. Search more to continue."); },
+    onError: () => { setStatus("Could not confirm cancellation. Wait a moment before searching again."); },
+    onSettled: () => {
+      cancelling.current = false;
+      activeRequest.current = null;
+    },
+  });
+
+  function startSearch(search: { username: string; seller: string }, excludeReleaseIds: number[]) {
+    // Reserve immediately rather than waiting for React's pending-state render.
+    if (activeRequest.current || cancelling.current) return;
+    const request = { id: crypto.randomUUID(), controller: new AbortController() };
+    activeRequest.current = request;
+    recommendationMutation.mutate({ ...search, excludeReleaseIds, searchId: request.id,
+      signal: request.controller.signal });
+  }
+
+  function handleCancel() {
+    const request = activeRequest.current;
+    if (!request || cancelling.current) return;
+    cancelling.current = true;
+    setStatus("Cancelling search…");
+    request.controller.abort();
+    cancelMutation.mutate(request.id);
+  }
+
   const wantlistMutation = useMutation({
-    mutationFn: (record: Recommendation) => addToWantlist(activeSearch!.username, record.release_id),
+    mutationFn: (record: Recommendation) => addToWantlist(record.release_id),
     onSuccess: (_, record) => {
       setWantlistRecommendations((current) => [...current, record]);
       setRecommendations((current) => current.filter((item) => item.release_id !== record.release_id));
@@ -50,12 +102,9 @@ function App() {
   });
 
   function handleSearchMore() {
-    if (!activeSearch || recommendationMutation.isPending || wantlistMutation.isPending) return;
+    if (!username || activeSearch?.username !== username || activeRequest.current || cancelling.current || wantlistMutation.isPending) return;
     setStatus("Searching for more records...");
-    recommendationMutation.mutate({
-      ...activeSearch,
-      excludeReleaseIds: [...recommendations, ...wantlistRecommendations].map((record) => record.release_id),
-    });
+    startSearch(activeSearch, [...recommendations, ...wantlistRecommendations].map((record) => record.release_id));
   }
 
   function handleStreamEvent(event: StreamEvent) {
@@ -131,7 +180,7 @@ function App() {
       return;
     }
 
-    if (recommendationMutation.isPending || wantlistMutation.isPending) return;
+    if (activeRequest.current || cancelling.current || wantlistMutation.isPending) return;
     const search = { username: username.trim(), seller: seller.trim() };
     setActiveSearch(search);
     setHasMore(true);
@@ -141,11 +190,16 @@ function App() {
     setWantlistRecommendations([]);
     setStatus("Starting...");
 
-    recommendationMutation.mutate({ ...search, excludeReleaseIds: [] });
+    startSearch(search, []);
   }
 
   return (
     <main>
+      <AccountControls
+        account={account}
+        busy={recommendationMutation.isPending || cancelMutation.isPending || wantlistMutation.isPending}
+        sessionExpired={sessionExpired}
+      />
       {/* HERO / SEARCH */}
       <div className="hero">
         <div className="brand">
@@ -161,21 +215,6 @@ function App() {
           onSubmit={handleSubmit}
         >
           <div className="field">
-            <label htmlFor="username">
-              Discogs username
-            </label>
-
-            <input
-              id="username"
-              value={username}
-              onChange={(event) =>
-                setUsername(event.target.value)
-              }
-              placeholder="Insert your username"
-            />
-          </div>
-
-          <div className="field">
             <label htmlFor="seller">
               Seller
             </label>
@@ -190,18 +229,26 @@ function App() {
             />
           </div>
 
-          <button
-            className="search-button"
-            type="submit"
-            disabled={recommendationMutation.isPending || wantlistMutation.isPending}
-            aria-busy={recommendationMutation.isPending}
-            aria-label={recommendationMutation.isPending ? "Finding records" : undefined}
-          >
-            <span className="search-button-label">Find records</span>
-            {recommendationMutation.isPending && (
-              <span className="search-spinner" aria-hidden="true" />
+          <div className="search-actions">
+            <button
+              className="search-button"
+              type="submit"
+              disabled={!username || recommendationMutation.isPending || cancelMutation.isPending || wantlistMutation.isPending}
+              aria-busy={recommendationMutation.isPending}
+              aria-label={recommendationMutation.isPending ? "Finding records" : undefined}
+            >
+              <span className="search-button-label">Find records</span>
+              {recommendationMutation.isPending && (
+                <span className="search-spinner" aria-hidden="true" />
+              )}
+            </button>
+            {(recommendationMutation.isPending || cancelMutation.isPending) && (
+              <button className="cancel-search-button" type="button" onClick={handleCancel}
+                disabled={cancelMutation.isPending}>
+                {cancelMutation.isPending ? "Cancelling…" : "Cancel search"}
+              </button>
             )}
-          </button>
+          </div>
         </form>
 
         {status && (
@@ -216,7 +263,7 @@ function App() {
 
         {inventoryNotice && <p className="status">{inventoryNotice}</p>}
 
-        {recommendationMutation.isError && (
+        {recommendationMutation.isError && !recommendationMutation.variables?.signal.aborted && (
           <p className="error">
             Error: {recommendationMutation.error.message}
           </p>
@@ -224,7 +271,7 @@ function App() {
       </div>
 
       <div className="results-layout">
-        {wantlistRecommendations.length > 0 && (
+        {username && activeSearch?.username === username && wantlistRecommendations.length > 0 && (
           <section className="results wantlist-results">
             <div className="section-header">
               <span>FROM YOUR WANTLIST</span>
@@ -241,7 +288,7 @@ function App() {
           </section>
         )}
 
-        {activeSearch && (
+        {username && activeSearch?.username === username && (
           <section className="results recommendation-results">
             <div className="section-header">
               <span>RECOMMENDATIONS</span>
@@ -254,7 +301,7 @@ function App() {
                   recommendation={recommendation}
                   rank={index + 1}
                   onAdd={() => wantlistMutation.mutate(recommendation)}
-                  canAdd={!recommendationMutation.isPending && !wantlistMutation.isPending}
+                  canAdd={!!username && !recommendationMutation.isPending && !cancelMutation.isPending && !wantlistMutation.isPending}
                   isAdding={wantlistMutation.isPending && wantlistMutation.variables?.release_id === recommendation.release_id}
                   addError={wantlistMutation.isError && wantlistMutation.variables?.release_id === recommendation.release_id
                     ? wantlistMutation.error.message : undefined}
@@ -267,7 +314,7 @@ function App() {
             <button
               className="search-more-button"
               type="button"
-              disabled={!hasMore || recommendationMutation.isPending || wantlistMutation.isPending}
+              disabled={!hasMore || recommendationMutation.isPending || cancelMutation.isPending || wantlistMutation.isPending}
               onClick={handleSearchMore}
             >
               {recommendationMutation.isPending ? "Searching..." : hasMore ? "Search more" : inventoryNotice ? "No more accessible records" : "No more records"}

@@ -1,16 +1,19 @@
+from app.services.release_cache import ReleaseCache
 import unittest
+import threading
 from unittest.mock import patch
 
 from app.models.listing import Listing
 from app.models.release import Release
 from app.models.release_summary import ReleaseSummary
 from app.models.user_taste import TasteProfile
-from app.services import inventory_service
+from app.services import inventory_service, recommender
 from app.services.recommender import (
     _year_scores, rank_listings, score_release, score_release_breakdown,
     score_year, select_candidates, select_progressive_batch,
 )
 from app.services.taste_service import count_artists
+from app.services.search_control import SearchCancelled, search_cancellation
 
 
 def listing(listing_id, release_id, summary=None):
@@ -147,6 +150,83 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(score_year(None, preferences), 0)
         self.assertEqual(score_year(1980, {}), 0)
 
+    def test_incremental_ranking_reuses_scores_and_updates_demand_and_duplicate_metadata(self):
+        taste = TasteProfile(artists={"A": 1, "Various": 100}, years={2000: 2})
+        pages = [
+            [listing(1, 10, ReleaseSummary(artist="A", community_want=10)),
+             listing(2, 20, ReleaseSummary(year=2000, community_want=20)),
+             listing(3, 30)],
+            [listing(4, 40, ReleaseSummary(community_want=1000)),
+             listing(5, 50, ReleaseSummary(artist="A"))],
+            # A later copy replaces the release's demand maximum and metadata.
+            [listing(6, 40, ReleaseSummary(artist="A", community_want=1)),
+             listing(7, 10, ReleaseSummary(year=2000, community_want=2))],
+        ]
+        ranker = recommender.ListingRanker(taste, {50})
+        all_listings = []
+        for page in pages:
+            all_listings.extend(page)
+            with patch.object(recommender, "pre_score_listing", wraps=recommender.pre_score_listing) as score:
+                ranker.add(page)
+                ranked = ranker.ranked()
+                self.assertEqual(ranker.ranked(), ranked)
+                self.assertEqual(score.call_count, sum(item.release_id != 50 for item in page))
+            self.assertEqual(ranked, rank_listings(all_listings, taste, {50}))
+        # Preserve the first-copy selection even when later metadata wins.
+        self.assertEqual([item.id for item, _ in ranked if item.release_id == 40], [4, 6])
+
+    def test_prepared_preferences_are_an_isolated_snapshot_with_original_scores(self):
+        taste = TasteProfile(artists={"A": 2, "B": 1, "Various": 100},
+                             labels={"Label": 2, "Other": 1, "Not On Label": 100},
+                             styles={"House": 2, "Techno": 1}, genres={"Electronic": 1},
+                             years={2000: 2})
+        prepared = recommender.prepare_taste(taste)
+        record = Release(1, "Record", artists=["B", "Unknown"], labels=["Other", "Not On Label"],
+                         styles=["House", "Techno"], genres=["Electronic"], year=2000)
+        scores = score_release_breakdown(record, prepared)
+        self.assertEqual(scores["artists"], 0.5)
+        self.assertEqual(scores["labels"], 0.5)
+        self.assertAlmostEqual(scores["styles"], 0.72)
+        self.assertAlmostEqual(scores["total"], 0.776)
+        taste.artists["B"] = 10
+        taste.styles.clear()
+        taste.years.clear()
+        self.assertEqual(score_release_breakdown(record, prepared), scores)
+        self.assertNotEqual(score_release_breakdown(record, taste), scores)
+
+    def test_cancellation_interrupts_preparation_scoring_and_ranking(self):
+        cancelled = threading.Event()
+        taste = TasteProfile(artists={"A": 1})
+        items = [listing(i, i, ReleaseSummary(artist="A")) for i in range(100)]
+        ranker = recommender.ListingRanker(taste, set())
+        ranker.add(items)
+        with search_cancellation(cancelled):
+            for operation in (lambda: recommender.prepare_taste(taste), lambda: ranker.add(items),
+                              ranker.ranked, lambda: select_candidates(ranker.ranked(), set(), set())):
+                cancelled.set()
+                with self.assertRaises(SearchCancelled):
+                    operation()
+            cancelled.clear()
+            original_score = recommender.pre_score_listing
+            def cancel_while_scoring(item, profile):
+                result = original_score(item, profile)
+                cancelled.set()
+                return result
+            with patch.object(recommender, "pre_score_listing", side_effect=cancel_while_scoring) as score:
+                with self.assertRaises(SearchCancelled):
+                    ranker.add(items)
+                self.assertEqual(score.call_count, 1)
+            cancelled.clear()
+            original_candidate = recommender.score_candidate
+            def cancel_while_ranking(*args):
+                result = original_candidate(*args)
+                cancelled.set()
+                return result
+            with patch.object(recommender, "score_candidate", side_effect=cancel_while_ranking) as score:
+                with self.assertRaises(SearchCancelled):
+                    ranker.ranked()
+                self.assertEqual(score.call_count, 1)
+
     def test_year_lookup_is_reused_and_profile_edits_invalidate_it(self):
         _year_scores.cache_clear()
         preferences = {1980: 1, 2000: 2}
@@ -167,7 +247,7 @@ class RecommendationTests(unittest.TestCase):
 
     def test_inventory_preserves_copies_and_fetches_each_release_once(self):
         copies = [listing(1, 10), listing(2, 10), listing(3, 20)]
-        with patch.dict(inventory_service._release_cache, {}, clear=True):
+        with patch.object(inventory_service, "_release_cache", ReleaseCache(1000, 21600)):
             with patch.object(inventory_service, "get_release", side_effect=[Release(10, "A"), Release(20, "B")]) as fetch:
                 items = inventory_service.link_inventory(copies, delay=2)
                 self.assertEqual([item.listing for item in items], copies)

@@ -1,7 +1,8 @@
-from dotenv import load_dotenv
-from dataclasses import asdict
+from app.config import get_settings
+from app.services.search_control import check_cancelled
 from app.services.cache_service import SQLiteCache
 from app.services.discogs_http import get_json, put_json
+from app.services.discogs_session import current_credentials, personal_namespace
 from urllib.parse import quote
 from app.services.release_mapper import (
     discogs_to_release,
@@ -10,11 +11,8 @@ from app.services.release_mapper import (
 )
 from app.models.release import Release
 
-cache = SQLiteCache()
+cache = SQLiteCache(get_settings().cache_db_path)
 DEFAULT_PER_PAGE = 100
-
-# Load environment variables from the local .env file.
-load_dotenv()
 
 def get_release_raw(release_id: int, *, min_interval: float = 1.1) -> dict:
     """Retrieve release metadata with shared request pacing and retries."""
@@ -29,10 +27,11 @@ def get_collection_raw(
     page: int = 1,
     per_page: int = 100,
 ):
+    check_cancelled()
     cache_key = f"{username}:{page}:{per_page}"
 
     cached = cache.get(
-        "collection_raw",
+        personal_namespace("collection_raw"),
         cache_key,
     )
 
@@ -48,7 +47,7 @@ def get_collection_raw(
     )
 
     cache.set(
-        "collection_raw",
+        personal_namespace("collection_raw"),
         cache_key,
         data,
         ttl_seconds=21600,
@@ -83,11 +82,12 @@ def get_inventory_raw(
     sort_order: str | None = None,
 ) -> dict:
     """Retrieve one page of a seller's inventory."""
+    check_cancelled()
 
     cache_key = f"{username}:{page}:{per_page}:{sort}:{sort_order}"
 
     cached = cache.get(
-        "inventory_raw",
+        personal_namespace("inventory_raw"),
         cache_key,
     )
 
@@ -111,7 +111,7 @@ def get_inventory_raw(
     )
 
     cache.set(
-        "inventory_raw",
+        personal_namespace("inventory_raw"),
         cache_key,
         data,
         ttl_seconds=21600,
@@ -179,16 +179,19 @@ def get_wantlist_raw(
     page: int = 1,
     per_page: int = 100,
 ):
+    check_cancelled()
     cache_key = f"{username}:{page}:{per_page}"
+    namespace = personal_namespace("wantlist_raw")
 
     cached = cache.get(
-        "wantlist_raw",
+        namespace,
         cache_key,
     )
 
     if cached is not None:
         return cached
 
+    version = cache.namespace_version(namespace)
     data = get_json(
         f"/users/{username}/wants",
         params={
@@ -198,10 +201,11 @@ def get_wantlist_raw(
     )
 
     cache.set(
-        "wantlist_raw",
+        namespace,
         cache_key,
         data,
         ttl_seconds=21600,
+        expected_version=version,
     )
 
     return data
@@ -250,17 +254,12 @@ def search_releases_by_style_raw(
         },
     )
 
-def add_to_wantlist(username: str, release_id: int) -> dict:
-    """Save to the token owner's wantlist and invalidate cached wantlists."""
-    identity = get_json("/oauth/identity")
-    owner = identity.get("username", "")
-    if not owner or owner.casefold() != username.strip().casefold():
-        raise PermissionError(
-            "The configured Discogs token must belong to the searched username."
-        )
+def add_to_wantlist(release_id: int) -> dict:
+    """Save to the signed-in owner's wantlist and invalidate their cached pages."""
+    owner = current_credentials().username
     result = put_json(
         f"/users/{quote(owner, safe='')}/wants/{release_id}",
         payload={"release_id": release_id},
     )
-    cache.clear_namespace("wantlist_raw")
+    cache.clear_namespace(personal_namespace("wantlist_raw"))
     return result

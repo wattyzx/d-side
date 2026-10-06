@@ -1,5 +1,7 @@
-import os
+from app.services.release_cache import ReleaseCache
+from contextvars import Context
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +12,8 @@ import httpx
 from app.services import discogs_client, discogs_http, inventory_service
 from app.models.listing import Listing
 from app.services.cache_service import SQLiteCache
+from app.services.discogs_session import DiscogsCredentials, discogs_session
+from app.services.search_control import SearchCancelled, search_cancellation
 
 def response(status=200, data=None, headers=None):
     return httpx.Response(
@@ -25,11 +29,13 @@ class DiscogsRequestTests(unittest.TestCase):
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)
         cache = SQLiteCache(Path(temp_dir.name) / "cache.sqlite3")
+        scope = discogs_session(DiscogsCredentials("Owner", "test-token", "test-secret", "consumer", "consumer-secret"))
+        scope.__enter__()
+        self.addCleanup(scope.__exit__, None, None, None)
         self.now = 0.0
         self.started = []
         for patcher in (
             patch.object(discogs_client, "cache", cache),
-            patch.dict(os.environ, {"DISCOGS_TOKEN": "test-token"}),
             patch.object(discogs_http, "_pacer", discogs_http._RequestPacer()),
             patch.object(discogs_http.time, "monotonic", side_effect=lambda: self.now),
             patch.object(discogs_http.time, "sleep", side_effect=self.sleep),
@@ -104,6 +110,51 @@ class DiscogsRequestTests(unittest.TestCase):
         self.assertEqual(discogs_http.get_json("/test"), {})
         self.assertEqual(self.started, [0, 1.1, 3.1])
 
+    def test_server_failures_defer_only_the_current_account(self):
+        self.responses = iter([response(503), response()])
+        with patch.object(discogs_http._pacer, "defer", wraps=discogs_http._pacer.defer) as defer:
+            discogs_http.get_json("/test")
+        self.assertEqual(defer.call_args.kwargs, {"account": "owner"})
+
+    def test_rate_limits_defer_the_shared_budget(self):
+        self.responses = iter([response(429), response()])
+        with patch.object(discogs_http._pacer, "defer", wraps=discogs_http._pacer.defer) as defer:
+            discogs_http.get_json("/test")
+        self.assertEqual(defer.call_args.kwargs, {"account": None})
+
+    def test_cancelled_inflight_response_still_paces_other_accounts_without_retrying(self):
+        cases = (
+            (429, {"Retry-After": "30"}, 30),
+            (429, {"Retry-After": "30", "X-Discogs-Ratelimit-Remaining": "0"}, 30),
+            (429, {"Retry-After": "120"}, 120),
+            (429, {}, 1.1),
+            (200, {"X-Discogs-Ratelimit-Remaining": "0"}, 60),
+            (200, {"X-Discogs-Ratelimit": "30"}, 2.1),
+        )
+        for status, headers, expected_delay in cases:
+            with self.subTest(status=status, headers=headers):
+                self.now = 0.0
+                self.started.clear()
+                self.http_get.reset_mock()
+                cancelled = threading.Event()
+                self.responses = iter([response(status, headers=headers), response(data={"ok": True})])
+                def cancel_inflight(*args, **kwargs):
+                    result = self.get(*args, **kwargs)
+                    cancelled.set()
+                    return result
+                with patch.object(discogs_http, "_pacer", discogs_http._RequestPacer()):
+                    self.http_get.side_effect = cancel_inflight
+                    try:
+                        with search_cancellation(cancelled), self.assertRaises(SearchCancelled):
+                            discogs_http.get_json("/test")
+                    finally:
+                        self.http_get.side_effect = self.get
+                    self.assertEqual(self.http_get.call_count, 1)
+                    with discogs_session(DiscogsCredentials("Other", "fake", "fake", "fake", "fake")):
+                        self.assertEqual(discogs_http.get_json("/test"), {"ok": True})
+                self.assertEqual(self.http_get.call_count, 2)
+                self.assertEqual(self.started, [0, expected_delay])
+
     def test_http_retries_are_bounded(self):
         self.responses = iter([response(503)] * 3)
         with self.assertRaises(httpx.HTTPStatusError):
@@ -137,7 +188,7 @@ class DiscogsRequestTests(unittest.TestCase):
     def test_cache_hits_do_not_fetch_or_wait(self):
         self.responses = iter([response(data={"id": 1, "title": "Record"})])
         item = Listing(1, 1, 10, "EUR", "Mint (M)")
-        with patch.dict(inventory_service._release_cache, {}, clear=True):
+        with patch.object(inventory_service, "_release_cache", ReleaseCache(1000, 21600)):
             inventory_service.link_inventory([item, item])
             inventory_service.link_inventory([item])
         self.assertEqual(self.started, [0])
@@ -270,38 +321,35 @@ class DiscogsRequestTests(unittest.TestCase):
         discogs_http.get_json("/test", min_interval=0)
         self.assertEqual(self.started, [0, 3, 4.1])
 
-    def test_missing_token_fails_before_request(self):
-        with patch.dict(os.environ, {"DISCOGS_TOKEN": ""}):
-            with self.assertRaises(RuntimeError):
-                discogs_http.get_json("/test")
+    def test_missing_session_fails_before_request(self):
+        with self.assertRaises(RuntimeError):
+            Context().run(discogs_http.get_json, "/test")
         self.http_get.assert_not_called()
 
-    def test_add_to_wantlist_verifies_owner_and_invalidates_cache(self):
-        discogs_client.cache.set("wantlist_raw", "Owner:1:100", {"wants": []})
-        self.responses = iter([response(data={"username": "Owner"})])
+    def test_add_to_wantlist_uses_session_owner_and_invalidates_cache(self):
+        discogs_client.cache.set("wantlist_raw:owner", "Owner:1:100", {"wants": []})
         with patch.object(discogs_http.httpx, "put", return_value=response(201)) as put:
-            discogs_client.add_to_wantlist("owner", 123)
+            discogs_client.add_to_wantlist(123)
         self.assertEqual(put.call_args.args[0], "https://api.discogs.com/users/Owner/wants/123")
         self.assertEqual(put.call_args.kwargs["json"], {"release_id": 123})
-        self.assertEqual(put.call_args.kwargs["headers"]["Authorization"], "Discogs token=test-token")
-        self.assertAlmostEqual(self.now, 1.1)
-        self.assertIsNone(discogs_client.cache.get("wantlist_raw", "Owner:1:100"))
+        self.assertIn('oauth_token="test-token"', put.call_args.kwargs["headers"]["Authorization"])
+        self.assertIn('oauth_signature_method="HMAC-SHA1"', put.call_args.kwargs["headers"]["Authorization"])
+        self.assertAlmostEqual(self.now, 0)
+        self.assertIsNone(discogs_client.cache.get("wantlist_raw:owner", "Owner:1:100"))
 
-    def test_add_to_wantlist_rejects_other_users_without_writing(self):
-        self.responses = iter([response(data={"username": "Owner"})])
+    def test_add_to_wantlist_requires_session_without_writing(self):
         with patch.object(discogs_http.httpx, "put") as put:
-            with self.assertRaises(PermissionError):
-                discogs_client.add_to_wantlist("SomeoneElse", 123)
+            with self.assertRaises(RuntimeError):
+                Context().run(discogs_client.add_to_wantlist, 123)
         put.assert_not_called()
 
     def test_failed_wantlist_save_preserves_cached_wantlist(self):
-        discogs_client.cache.set("wantlist_raw", "Owner:1:100", {"wants": []})
-        self.responses = iter([response(data={"username": "Owner"})])
+        discogs_client.cache.set("wantlist_raw:owner", "Owner:1:100", {"wants": []})
         with patch.object(discogs_http.httpx, "put", return_value=response(403)) as put:
             with self.assertRaises(httpx.HTTPStatusError):
-                discogs_client.add_to_wantlist("Owner", 123)
+                discogs_client.add_to_wantlist(123)
         self.assertEqual(put.call_count, 1)
-        self.assertEqual(discogs_client.cache.get("wantlist_raw", "Owner:1:100"), {"wants": []})
+        self.assertEqual(discogs_client.cache.get("wantlist_raw:owner", "Owner:1:100"), {"wants": []})
 
     def test_wantlist_put_retries_rate_limits_with_shared_pacing(self):
         with patch.object(discogs_http.httpx, "put", side_effect=[

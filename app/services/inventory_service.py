@@ -1,10 +1,13 @@
 from app.models.inventory_item import InventoryItem
 from app.models.listing import Listing
-from app.models.release import Release
 from app.services.discogs_client import get_release
+from app.services.search_control import check_cancelled
+from app.config import get_settings
+from app.services.release_cache import ReleaseCache
 
 
-_release_cache: dict[int, Release] = {}
+_settings = get_settings()
+_release_cache = ReleaseCache(_settings.release_cache_max_entries, _settings.release_cache_ttl_seconds)
 
 def link_listing(listing: Listing, *, delay: float = 1.1) -> InventoryItem:
     """
@@ -15,13 +18,13 @@ def link_listing(listing: Listing, *, delay: float = 1.1) -> InventoryItem:
     and combines both objects into an InventoryItem.
     """
 
+    check_cancelled()
     release_id = listing.release_id
 
-    if release_id in _release_cache:
-        release = _release_cache[release_id]
-    else:
+    release = _release_cache.get(release_id)
+    if release is None:
         release = get_release(release_id, min_interval=delay)
-        _release_cache[release_id] = release
+        _release_cache.set(release_id, release)
 
     return InventoryItem(
         listing=listing,

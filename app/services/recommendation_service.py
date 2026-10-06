@@ -9,6 +9,8 @@ from app.services.discogs_client import (
 )
 from app.services.release_mapper import inventory_to_listings
 from app.services.recommender import (
+    ListingRanker,
+    prepare_taste,
     rank_inventory_items,
     rank_listings,
     select_candidates,
@@ -16,6 +18,7 @@ from app.services.recommender import (
     score_release_breakdown,
 )
 from app.services.taste_service import build_taste_profile
+from app.services.search_control import SearchCancelled, check_cancelled
 from app.services.inventory_service import (
     link_inventory,
     link_listing,
@@ -58,9 +61,9 @@ def recommend(
         for release in collection
     }
 
-    taste = build_taste_profile(
+    taste = prepare_taste(build_taste_profile(
         collection
-    )
+    ))
 
     wantlist_ids = set(
         get_wantlist_ids(username)
@@ -233,9 +236,9 @@ def recommend_stream(
             message="Building taste profile",
         )
 
-        taste = build_taste_profile(
+        taste = prepare_taste(build_taste_profile(
             collection
-        )
+        ))
 
         yield _stream_event(
             "status",
@@ -282,6 +285,7 @@ def recommend_stream(
         # -------------------------
 
         listings = []
+        ranker = ListingRanker(taste, collection_ids)
 
         wantlist_seen = set()
         scored_ids = set()
@@ -289,6 +293,7 @@ def recommend_stream(
         exploit_limit = FULL_SCORE_LIMIT - EXPLORATION_SIZE
 
         for page in sample_pages:
+            check_cancelled()
 
             # Page 1 is already available
             # from the inventory size request.
@@ -311,14 +316,17 @@ def recommend_stream(
 
             # Spread the top-candidate budget across the scan, starting on
             # page 1. Reserve exploration for the complete accessible pool.
-            ranked = rank_listings(listings, taste, collection_ids)
-            eligible = select_candidates(
-                ranked, wantlist_ids,
-                collection_ids | excluded_ids | scored_ids,
-                limit=len(ranked),
-            )
+            ranker.add(page_listings)
             final_page = page == len(sample_pages)
             target = ceil(exploit_limit * page / len(sample_pages))
+            eligible = []
+            if target > len(scored_ids) or final_page:
+                ranked = ranker.ranked()
+                eligible = select_candidates(
+                    ranked, wantlist_ids,
+                    collection_ids | excluded_ids | scored_ids,
+                    limit=len(ranked),
+                )
             candidates, exploration = select_progressive_batch(
                 eligible,
                 selected_ids=set(),
@@ -351,6 +359,7 @@ def recommend_stream(
             # -------------------------
 
             for listing in page_listings:
+                check_cancelled()
 
                 if (
                     listing.release_id
@@ -409,6 +418,8 @@ def recommend_stream(
             ),
         )
 
+    except SearchCancelled:
+        raise
     except Exception as exc:
 
         yield _stream_event(

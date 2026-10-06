@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addToWantlist, getRecommendations } from "../src/api/recommendations.ts";
+import { addToWantlist, cancelSearch, getRecommendations } from "../src/api/recommendations.ts";
 
 const encoder = new TextEncoder();
 const result = (id, score) => ({
@@ -20,7 +20,7 @@ test("publishes each result before completion and returns results sorted by scor
   const events = [];
   let received;
   const firstEvent = new Promise((resolve) => { received = resolve; });
-  const pending = getRecommendations("user", "seller", {
+  const pending = getRecommendations("seller", {
     onEvent(event) { events.push(event); received(); },
   });
   controller.enqueue(encoder.encode(eventLine(result(1, 0.2))));
@@ -41,7 +41,7 @@ test("handles fragmented JSON and UTF-8 plus a final event without a newline", a
     },
   });
   t.mock.method(globalThis, "fetch", async () => new Response(body));
-  const results = await getRecommendations("user", "seller");
+  const results = await getRecommendations("seller");
   assert.equal(results[0].title, "Café");
 });
 
@@ -55,7 +55,7 @@ test("reports interrupted streams after publishing available results", async (t)
   t.mock.method(globalThis, "fetch", async () => new Response(body));
   const events = [];
   await assert.rejects(
-    getRecommendations("user", "seller", { onEvent: (event) => events.push(event) }),
+    getRecommendations("seller", { onEvent: (event) => events.push(event) }),
     /ended before completion/,
   );
   assert.equal(events[0].recommendation.listing_id, 1);
@@ -65,16 +65,17 @@ test("reports interrupted streams after publishing available results", async (t)
 test("continuation requests send scored releases without limiting inventory pages", async (t) => {
   let request;
   t.mock.method(globalThis, "fetch", async (_, options) => {
+    assert.equal(options.credentials, "include");
     request = JSON.parse(options.body);
     return new Response('{"type":"done","has_more":false}\n');
   });
   const events = [];
-  await getRecommendations("user", "seller", {
+  await getRecommendations("seller", {
     excludeReleaseIds: [1, 2],
     onEvent: (event) => events.push(event),
   });
   assert.deepEqual(request, {
-    username: "user", seller: "seller", exclude_release_ids: [1, 2],
+    seller: "seller", exclude_release_ids: [1, 2],
   });
   assert.equal(events[0].has_more, false);
 });
@@ -82,15 +83,61 @@ test("continuation requests send scored releases without limiting inventory page
 test("wantlist saves post release IDs and surface backend errors", async (t) => {
   let request;
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url, "http://127.0.0.1:8000/wantlist");
+    assert.equal(url, "/wantlist");
     assert.equal(options.method, "POST");
+    assert.equal(options.credentials, "include");
     request = JSON.parse(options.body);
     return new Response('{"added":true}');
   });
-  await addToWantlist("user", 123);
-  assert.deepEqual(request, { username: "user", release_id: 123 });
+  await addToWantlist(123);
+  assert.deepEqual(request, { release_id: 123 });
   t.mock.method(globalThis, "fetch", async () => new Response(
     '{"detail":"Token belongs to another user"}', { status: 403 },
   ));
-  await assert.rejects(addToWantlist("user", 123), /Token belongs to another user/);
+  await assert.rejects(addToWantlist(123), /Token belongs to another user/);
+});
+
+test("cancelling retains published events, discards buffered events, and closes the reader", async (t) => {
+  const controller = new AbortController();
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(stream) {
+      stream.enqueue(encoder.encode(eventLine(result(1, 0.5)) + eventLine(result(2, 0.7))));
+    },
+    cancel() { cancelled = true; },
+  });
+  t.mock.method(globalThis, "fetch", async (_, options) => {
+    assert.equal(JSON.parse(options.body).search_id, "search-123");
+    return new Response(body);
+  });
+  const events = [];
+  await assert.rejects(getRecommendations("shop", {
+    searchId: "search-123", signal: controller.signal,
+    onEvent(event) { events.push(event); controller.abort(); },
+  }), { name: "AbortError" });
+  assert.equal(events.length, 1);
+  assert.equal(events[0].recommendation.release_id, 1);
+  assert.equal(cancelled, true);
+});
+
+test("a search cancelled before starting makes no request", async (t) => {
+  const controller = new AbortController();
+  controller.abort();
+  const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("Unexpected request"); });
+  await assert.rejects(getRecommendations("shop", { signal: controller.signal }), { name: "AbortError" });
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("the cancellation request identifies its own search and preserves backend conflict messages", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url, "/recommend/cancel");
+    assert.equal(options.credentials, "include");
+    assert.deepEqual(JSON.parse(options.body), { search_id: "search-123" });
+    return new Response('{"cancelled":true}');
+  });
+  await cancelSearch("search-123");
+  t.mock.method(globalThis, "fetch", async () => new Response(
+    '{"detail":"A search is already running for your account"}', { status: 409 },
+  ));
+  await assert.rejects(getRecommendations("shop"), /already running/);
 });

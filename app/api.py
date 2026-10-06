@@ -1,45 +1,77 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from uuid import UUID
+from contextlib import asynccontextmanager
+
+import anyio
 import httpx
-
-from app.services.discogs_client import add_to_wantlist
-
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from app.config import get_settings, load_environment
+
+# Initialize configuration before importing application services.
+load_environment()
+settings = get_settings()
+
+from app.services.discogs_client import add_to_wantlist, cache
+from app.auth import router as auth_router, require_account, trusted_origin, get_auth_services
+from app.services.discogs_session import DiscogsCredentials, discogs_session
+from app.search_response import SearchStreamingResponse, run_search
+from app.services.search_control import SearchAlreadyRunning, SearchCancelled, SearchCapacityReached, search_registry
+from app.services.inventory_service import _release_cache
+from app.services.maintenance import clear_expired, periodic_cleanup
+from starlette.concurrency import run_in_threadpool
+
 from app.services.recommendation_service import (
     recommend,
     recommend_stream,
 )
 
+@asynccontextmanager
+async def lifespan(app):
+    auth_store = None
+    if settings.discogs_consumer_key and settings.discogs_consumer_secret and settings.auth_encryption_key:
+        auth_store = get_auth_services().store
+    stores = (cache, auth_store, _release_cache)
+    await run_in_threadpool(clear_expired, *stores)
+    async with anyio.create_task_group() as group:
+        group.start_soon(periodic_cleanup, settings.cache_cleanup_interval_seconds, *stores)
+        try:
+            yield
+        finally:
+            group.cancel_scope.cancel()
+
+
 app = FastAPI(
     title="D(e)Side API",
     version="1.0.0",
+    lifespan=lifespan,
 )
+app.include_router(auth_router)
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=list(settings.cors_allowed_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 class RecommendRequest(BaseModel):
-    username: str = Field(min_length=1)
     seller: str = Field(min_length=1)
+    search_id: UUID | None = None
 
 
 class RecommendStreamRequest(RecommendRequest):
     exclude_release_ids: list[int] = Field(default_factory=list)
-    inventory_page_limit: int | None = Field(
-        default=None, ge=1, deprecated=True,
-        description="Legacy argument; searches scan all accessible inventory pages (up to 100).",
-    )
+
+
+class CancelSearchRequest(BaseModel):
+    search_id: UUID
 
 
 class WantlistRequest(BaseModel):
-    username: str = Field(min_length=1)
     release_id: int = Field(gt=0)
 
 
@@ -51,53 +83,75 @@ def health():
     }
 
 
-@app.post("/recommend")
-def recommend_endpoint(
-    request: RecommendRequest,
-):
+def start_search(account, search_id):
     try:
-        return recommend(
-            username=request.username,
-            seller=request.seller,
-        )
+        return search_registry.start(account.username, str(search_id) if search_id else None)
+    except SearchAlreadyRunning:
+        raise HTTPException(409, "A search is already running for your account. Cancel it or wait for it to finish.") from None
+    except SearchCapacityReached:
+        raise HTTPException(503, "All search slots are busy. Please try again shortly.",
+                            headers={"Retry-After": "5"}) from None
 
+
+@app.post("/recommend")
+async def recommend_endpoint(
+    request: RecommendRequest,
+    connection: Request,
+    account: DiscogsCredentials = Depends(require_account),
+):
+    job = start_search(account, request.search_id)
+    try:
+        return await run_search(connection, account, job,
+                                lambda: recommend(username=account.username, seller=request.seller))
+    except SearchCancelled:
+        raise HTTPException(499, "Search cancelled.") from None
     except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
-
+        raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Recommendation failed: {exc}",
-        ) from exc
+        raise HTTPException(502, "Recommendation failed. Please try again.") from exc
+
 
 @app.post("/recommend/stream")
 def recommend_stream_endpoint(
     request: RecommendStreamRequest,
+    account: DiscogsCredentials = Depends(require_account),
 ):
-    return StreamingResponse(
-        recommend_stream(
-            username=request.username,
-            seller=request.seller,
-            exclude_release_ids=request.exclude_release_ids,
-            inventory_page_limit=request.inventory_page_limit,
-        ),
-        media_type="application/x-ndjson",
-    )
+    job = start_search(account, request.search_id)
+    try:
+        iterator = recommend_stream(username=account.username, seller=request.seller,
+                                    exclude_release_ids=request.exclude_release_ids)
+        return SearchStreamingResponse(iterator, account, job)
+    except Exception:
+        search_registry.finish(job)
+        raise
+
+
+@app.post("/recommend/cancel")
+async def cancel_search_endpoint(
+    request: CancelSearchRequest,
+    account: DiscogsCredentials = Depends(require_account),
+    _=Depends(trusted_origin),
+):
+    job = search_registry.cancel(account.username, str(request.search_id))
+    if job is None:
+        return {"cancelled": False}
+    # Acknowledge only after the worker exits, so Search more can safely start.
+    while not job.finished.is_set():
+        await anyio.sleep(0.05)
+    return {"cancelled": True}
 
 @app.post("/wantlist")
-def add_wantlist_endpoint(request: WantlistRequest):
+def add_wantlist_endpoint(request: WantlistRequest,
+                         account: DiscogsCredentials = Depends(require_account),
+                         _=Depends(trusted_origin)):
     try:
-        add_to_wantlist(request.username, request.release_id)
+        with discogs_session(account):
+            add_to_wantlist(request.release_id)
         return {"release_id": request.release_id, "added": True}
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         message = (
-            "Discogs could not authorize this save. Check the configured token."
+            "Discogs could not authorize this save. Reconnect your account."
             if status in (401, 403)
             else "Discogs could not save this record. Please try again."
         )

@@ -48,6 +48,39 @@ main {
   text-align: left;
 }
 
+.account-controls {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #aaaab3;
+  font-size: 0.8rem;
+}
+
+.account-controls button,
+.connect-button {
+  padding: 8px 12px;
+  border: 1px solid #454545;
+  border-radius: 5px;
+  background: #18181b;
+  color: #f2f2f0;
+  text-decoration: none;
+}
+
+.account-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.account-controls .account-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: #f87171;
+  text-align: right;
+}
+
 .logo {
   margin: 0;
   font-size: clamp(3.5rem, 6vw, 5.5rem);
@@ -64,10 +97,10 @@ main {
 
 .search-form {
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  width: min(100%, 480px);
+  grid-template-columns: 1fr auto;
+  width: min(100%, 360px);
   justify-self: end;
-  gap: 8px;
+  gap: 12px;
   margin: 0;
 }
 
@@ -130,6 +163,27 @@ main {
   transition:
     transform 0.15s ease,
     background 0.15s ease;
+}
+
+.search-actions {
+  display: flex;
+  align-self: end;
+  gap: 8px;
+}
+
+.cancel-search-button {
+  padding: 7px 10px;
+  border: 1px solid #454545;
+  border-radius: 5px;
+  background: #18181b;
+  color: #cccccc;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.cancel-search-button:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 
 .search-button:hover {

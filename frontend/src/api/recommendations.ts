@@ -1,3 +1,6 @@
+import { session } from "../session.ts";
+import { apiFetch, assertCurrentSession } from "./http.ts";
+
 export type Recommendation = {
   listing_id: number;
   release_id: number;
@@ -42,6 +45,8 @@ export type StreamEvent = {
 type StreamCallbacks = {
   onEvent?: (event: StreamEvent) => void;
   excludeReleaseIds?: number[];
+  searchId?: string;
+  signal?: AbortSignal;
 };
 
 export function sortRecommendations(
@@ -55,42 +60,43 @@ export function sortRecommendations(
 }
 
 export async function getRecommendations(
-  username: string,
   seller: string,
   callbacks: StreamCallbacks = {},
 ): Promise<Recommendation[]> {
-  const response = await fetch(
-    "http://127.0.0.1:8000/recommend/stream",
+  const revision = session.getSnapshot().revision;
+  const response = await apiFetch(
+    "/recommend/stream",
     {
       method: "POST",
+      signal: callbacks.signal,
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        username,
         seller,
         exclude_release_ids: callbacks.excludeReleaseIds ?? [],
+        ...(callbacks.searchId ? { search_id: callbacks.searchId } : {}),
       }),
     },
+    { fallback: "Could not find recommendations. Please try again." },
   );
-
-  if (!response.ok) {
-    throw new Error(
-      `Recommendation request failed: ${response.status}`,
-    );
-  }
 
   if (!response.body) {
     throw new Error("Streaming response is not available");
   }
 
   const reader = response.body.getReader();
+  const cancelReader = () => { void reader.cancel().catch(() => {}); };
+  callbacks.signal?.addEventListener("abort", cancelReader, { once: true });
+  if (callbacks.signal?.aborted) cancelReader();
   const decoder = new TextDecoder();
 
   let buffer = "";
   const recommendations: Recommendation[] = [];
 
   function handleLine(line: string): boolean {
+    assertCurrentSession(revision);
+    callbacks.signal?.throwIfAborted();
     if (!line.trim()) return false;
     const event = JSON.parse(line) as StreamEvent;
     callbacks.onEvent?.(event);
@@ -128,24 +134,28 @@ export async function getRecommendations(
         }
       }
     }
+  } catch (error) {
+    assertCurrentSession(revision);
+    throw error;
   } finally {
+    callbacks.signal?.removeEventListener("abort", cancelReader);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
 
-export async function addToWantlist(username: string, releaseId: number): Promise<void> {
-  const response = await fetch("http://127.0.0.1:8000/wantlist", {
+export async function cancelSearch(searchId: string): Promise<void> {
+  await apiFetch("/recommend/cancel", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, release_id: releaseId }),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => null);
-    throw new Error(
-      typeof error?.detail === "string"
-        ? error.detail
-        : "Could not add this record to your wantlist. Please try again.",
-    );
-  }
+    body: JSON.stringify({ search_id: searchId }),
+  }, { fallback: "Could not confirm cancellation. Please try again." });
+}
+
+export async function addToWantlist(releaseId: number): Promise<void> {
+  await apiFetch("/wantlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ release_id: releaseId }),
+  }, { fallback: "Could not add this record to your wantlist. Please try again." });
 }
