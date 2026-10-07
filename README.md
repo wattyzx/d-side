@@ -103,8 +103,8 @@ Candidate selection:
 
 Implementations:
 
-- [] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
-- [] Add a **Add to cart** button next to each release. 
+- [ ] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
+- [ ] Add a **Add to cart** button next to each release. 
 
 Steps towards deployment:
 
