@@ -59,12 +59,11 @@ Restart the servers after changing configuration.
 
 ### Serve the built frontend with FastAPI
 
-Frontend serving is optional and disabled by default. After building React,
-enable it to serve the website and API from the same address without Vite:
+Frontend serving is optional and disabled by default. After building React, enable it to serve the website and API from the same address without Vite:
 
 ```sh
 npm run build --prefix frontend
-SERVE_FRONTEND=true FRONTEND_URL=http://localhost:8000 .venv/bin/python -m uvicorn app.api:app --workers 1
+FRONTEND_URL=http://localhost:8000 ./run-production.sh
 ```
 
 Open `http://localhost:8000`. The default Discogs callback becomes
@@ -73,6 +72,13 @@ Open `http://localhost:8000`. The default Discogs callback becomes
 the public HTTPS origin. Authentication and API routes keep their existing paths.
 Enabling serving without `frontend/dist/index.html` fails at startup with a build
 instruction. Rebuild React after frontend changes.
+
+`run-production.sh` enables frontend serving and starts one Uvicorn worker
+without development reload. It checks for the Python environment and frontend
+build, and binds to `0.0.0.0:8000` by default. Override `HOST` or `PORT` through
+environment variables when needed. Set `FRONTEND_URL` and any explicit
+`DISCOGS_CALLBACK_URL` in the environment or `.env`; the script does not replace
+these URL settings. Press **Ctrl+C** to stop the server.
 
 ## Stack
 
