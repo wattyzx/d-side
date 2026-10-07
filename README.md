@@ -57,6 +57,23 @@ Vite proxies API and authentication requests to the backend. Use `localhost:5173
 Press **Ctrl+C** to stop both servers. Later starts use `.venv` automatically.
 Restart the servers after changing configuration.
 
+### Serve the built frontend with FastAPI
+
+Frontend serving is optional and disabled by default. After building React,
+enable it to serve the website and API from the same address without Vite:
+
+```sh
+npm run build --prefix frontend
+SERVE_FRONTEND=true FRONTEND_URL=http://localhost:8000 .venv/bin/python -m uvicorn app.api:app --workers 1
+```
+
+Open `http://localhost:8000`. The default Discogs callback becomes
+`http://localhost:8000/auth/discogs/callback`; if you explicitly set
+`DISCOGS_CALLBACK_URL`, update it to match. For hosting, set `FRONTEND_URL` to
+the public HTTPS origin. Authentication and API routes keep their existing paths.
+Enabling serving without `frontend/dist/index.html` fails at startup with a build
+instruction. Rebuild React after frontend changes.
+
 ## Stack
 
 - **Frontend:** React, TypeScript, Vite, and TanStack Query.
@@ -113,6 +130,7 @@ Steps towards deployment:
 - [ ] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
 - [ ] Deploy one backend instance with one worker and a `/health` check.
 - [ ] Pass Python tests, frontend tests, production build, and lint checks.
+- [ ] Test load limitations. Need to establish `MAX_CONCURRENT_USERS`.
 - [ ] Smoke-test login, refresh, search, cancellation, **Search more**, saves, and logout; verify persistence across restarts and behavior after hosting sleep.
 
 ## What’s next

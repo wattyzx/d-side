@@ -7,7 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app.config import get_settings, load_environment
+from app.config import PROJECT_ROOT, get_settings, load_environment
+from app.frontend import mount_frontend
 
 # Initialize configuration before importing application services.
 load_environment()
@@ -164,3 +165,8 @@ def add_wantlist_endpoint(request: WantlistRequest,
         raise HTTPException(
             status_code=502, detail="Could not reach Discogs. Please try again.",
         ) from exc
+
+
+# Register last so authentication, API endpoints, and docs retain priority.
+if settings.serve_frontend:
+    mount_frontend(app, PROJECT_ROOT / "frontend" / "dist")

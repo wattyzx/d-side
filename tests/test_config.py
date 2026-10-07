@@ -10,6 +10,13 @@ from app.config import ConfigurationError, PROJECT_ROOT, Settings, get_settings,
 
 
 class SettingsTests(unittest.TestCase):
+    def test_frontend_serving_is_opt_in_and_requires_a_boolean(self):
+        self.assertFalse(Settings.from_environment({}).serve_frontend)
+        self.assertTrue(Settings.from_environment({"SERVE_FRONTEND": "true"}).serve_frontend)
+        self.assertFalse(Settings.from_environment({"SERVE_FRONTEND": "false"}).serve_frontend)
+        with self.assertRaises(ConfigurationError):
+            Settings.from_environment({"SERVE_FRONTEND": "yes"})
+
     def test_local_defaults_and_paths(self):
         settings = Settings.from_environment({})
         self.assertEqual(settings.callback_url, "http://localhost:5173/auth/discogs/callback")

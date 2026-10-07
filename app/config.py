@@ -61,6 +61,7 @@ def _path(value: str) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
+    serve_frontend: bool = False
     frontend_url: str = "http://localhost:5173"
     callback_url: str = "http://localhost:5173/auth/discogs/callback"
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173",)
@@ -94,6 +95,9 @@ class Settings:
     def from_environment(cls, env: Mapping[str, str] | None = None):
         env = os.environ if env is None else env
         defaults = cls()
+        serve_frontend = env.get("SERVE_FRONTEND", "false").lower()
+        if serve_frontend not in ("true", "false"):
+            raise ConfigurationError("SERVE_FRONTEND must be true or false.")
         frontend = _url(env.get("FRONTEND_URL", defaults.frontend_url), "FRONTEND_URL")
         callback = _url(env.get("DISCOGS_CALLBACK_URL", frontend + "/auth/discogs/callback"),
                         "DISCOGS_CALLBACK_URL")
@@ -117,6 +121,7 @@ class Settings:
                 raise ConfigurationError("COOKIE_SECURE cannot be false with an HTTPS callback.")
             secure = value == "true"
         return cls(
+            serve_frontend=serve_frontend == "true",
             frontend_url=frontend, callback_url=callback, cors_allowed_origins=origins,
             auth_db_path=_path(env.get("AUTH_DB_PATH", str(defaults.auth_db_path))),
             cache_db_path=_path(env.get("CACHE_DB_PATH", str(defaults.cache_db_path))),
