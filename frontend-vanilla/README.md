@@ -40,6 +40,11 @@ scanned page, independently of the recommendation score or its 0.1 threshold.
 Only the vanilla frontend opts into these snapshots; React searches retain
 their existing behavior.
 
+Full-release responses also preserve YouTube videos as `videos` entries with
+`uri`, `title`, and `embed`. These are included in recommendations and wantlist
+matches for a future player, with no additional API requests or UI controls.
+Releases without videos and inventory-only demand records return an empty list.
+
 The app reuses the existing framework-independent TypeScript modules in
 `frontend/src/api/` and `frontend/src/session.ts`. Vite transpiles them. The
 session module's TanStack import is type-only and adds no runtime dependency.

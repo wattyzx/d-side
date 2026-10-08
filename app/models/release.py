@@ -25,3 +25,4 @@ class Release:
     formats: list[str] = field(default_factory=list)
 
     thumbnail_url: str | None = None
+    videos: list[dict] = field(default_factory=list)

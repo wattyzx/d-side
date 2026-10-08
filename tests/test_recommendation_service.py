@@ -136,6 +136,19 @@ class RecommendationServiceTests(unittest.TestCase):
         for record in records:
             self.assertEqual(record["thumbnail_url"], self.releases[record["release_id"]].thumbnail_url)
 
+    def test_videos_reach_regular_recommendation_and_wantlist_payloads(self):
+        video = {"uri": "https://www.youtube.com/watch?v=abcdefghijk", "title": "Track", "embed": True}
+        self.releases[2].videos = [video]
+        self.releases[3].videos = [video]
+        regular = service.recommend("user", "seller")["recommendations"]
+        self.assertEqual(regular[0]["videos"], [video])
+        streamed = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        records = [event["recommendation"] for event in streamed
+                   if event["type"] in ("recommendation", "wantlist")]
+        self.assertEqual(len(records), 2)
+        for record in records:
+            self.assertEqual(record["videos"], [video])
+
     def test_demand_view_ranks_inventory_independently_without_extra_enrichment(self):
         self.releases[4] = Release(id=4, title="Unfamiliar", artists=["Unknown"],
                                    labels=["Unknown"], styles=["Jazz"])

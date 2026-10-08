@@ -1,11 +1,18 @@
 import { session } from "../session.ts";
 import { apiFetch, assertCurrentSession } from "./http.ts";
 
+export type ReleaseVideo = {
+  uri: string;
+  title: string;
+  embed: boolean;
+};
+
 export type Recommendation = {
   listing_id: number;
   release_id: number;
   title: string;
   thumbnail_url?: string | null;
+  videos?: ReleaseVideo[];
   artists: string[];
   labels: string[];
   year: number | null;

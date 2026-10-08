@@ -1,6 +1,32 @@
 from app.models.release import Release
 from app.models.listing import Listing
 from app.models.release_summary import ReleaseSummary
+from urllib.parse import urlsplit
+
+
+def _youtube_videos(data: dict) -> list[dict]:
+    videos = []
+    seen = set()
+    for video in data.get("videos") or []:
+        if not isinstance(video, dict) or not isinstance(video.get("uri"), str):
+            continue
+        uri = video["uri"].strip()
+        try:
+            parsed = urlsplit(uri)
+        except ValueError:
+            continue
+        if parsed.scheme not in ("http", "https") or parsed.hostname not in {
+            "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com",
+            "youtu.be", "www.youtu.be",
+        } or uri in seen:
+            continue
+        seen.add(uri)
+        videos.append({
+            "uri": uri,
+            "title": video.get("title") if isinstance(video.get("title"), str) else "",
+            "embed": video.get("embed") is True,
+        })
+    return videos
 
 def _cover_thumbnail(data: dict) -> str | None:
     images = data.get("images") or []
@@ -48,6 +74,7 @@ def discogs_to_release(data: dict) -> Release:
         catalog_numbers=catalog_numbers,
         formats=formats,
         thumbnail_url=_cover_thumbnail(data),
+        videos=_youtube_videos(data),
     )
 
 def collection_item_to_release(item: dict) -> Release:
