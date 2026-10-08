@@ -2,6 +2,9 @@
 import { getAccount, logout, discogsLoginUrl } from '../../frontend/src/api/auth.ts';
 import { getRecommendations, cancelSearch, addToWantlist, sortRecommendations } from '../../frontend/src/api/recommendations.ts';
 import { session } from '../../frontend/src/session.ts';
+import { createReleasePlayer, playableVideos } from './player.js';
+
+const previewPlayer = createReleasePlayer();
 
 const elements = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
 const state = { account: null, checking: true, active: null, cancelling: false, saving: false,
@@ -101,7 +104,15 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     number.setAttribute('aria-label', `Rank ${rank}`);
     row.append(number);
   }
-  const cover = node('div', undefined, 'cover');
+  const canPlay = playableVideos(record).length > 0;
+  const cover = node(canPlay ? 'button' : 'div', undefined, 'cover');
+  if (canPlay) {
+    cover.type = 'button';
+    cover.title = `Play ${record.title}`;
+    cover.setAttribute('aria-label', `Play preview of ${record.title}`);
+    cover.onclick = () => { void previewPlayer.play(record); };
+    cover.append(node('span', '▶', 'cover-play'));
+  }
   const placeholder = node('span', '','cover-placeholder');
   cover.append(placeholder);
   if (typeof record.thumbnail_url === 'string' && /^https?:\/\//.test(record.thumbnail_url)) {
@@ -205,6 +216,7 @@ function render() {
 }
 
 session.onEnd(() => {
+  previewPlayer.close();
   state.expanded.clear();
   state.active?.controller.abort();
   Object.assign(state, { account: null, active: null, cancelling: false, saving: false,

@@ -47,6 +47,21 @@
       </div>
       <noscript>This frontend needs JavaScript for login status and streamed recommendations.</noscript>
     </main>
+    <div id="player-video" class="player-video" hidden>
+      <div id="youtube-player"></div>
+    </div>
+    <aside id="player-bar" class="player-bar" aria-label="Release preview player" hidden>
+      <div class="player-track">
+        <span id="player-title"></span>
+        <span id="player-release"></span>
+      </div>
+      <span id="player-position"></span>
+      <button id="player-toggle" type="button" aria-label="Play preview" title="Play" disabled>▶</button>
+      <button id="player-next" type="button" aria-label="Next song" disabled>Next ›</button>
+      <a id="player-youtube" target="_blank" rel="noopener noreferrer">YouTube ↗</a>
+      <button id="player-close" type="button" aria-label="Close player">×</button>
+      <span id="player-message" role="status" aria-live="polite"></span>
+    </aside>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

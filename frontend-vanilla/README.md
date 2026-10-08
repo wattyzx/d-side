@@ -42,7 +42,7 @@ their existing behavior.
 
 Full-release responses also preserve YouTube videos as `videos` entries with
 `uri`, `title`, and `embed`. These are included in recommendations and wantlist
-matches for a future player, with no additional API requests or UI controls.
+matches with no additional API requests.
 Releases without videos and inventory-only demand records return an empty list.
 
 The app reuses the existing framework-independent TypeScript modules in
@@ -55,7 +55,4 @@ npm run test --prefix frontend-vanilla
 npm run build --prefix frontend-vanilla
 ```
 
-The test command runs the existing API/session tests. Manually compare login,
-streamed results, cancellation, search more, wantlist saves, logout, and a narrow
-browser window. Production serving still selects the original React build;
-this experiment does not change that setting.
+The test command runs API/session tests and player behavior tests. Manually compare login, streamed results, cancellation, search more, wantlist saves, logout, and a narrow browser window. Production serving still selects the original React build; this experiment does not change that setting.
