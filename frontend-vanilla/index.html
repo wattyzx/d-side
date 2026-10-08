@@ -23,16 +23,25 @@
         <p id="status" role="status" aria-live="polite">Checking your connection…</p>
         <p id="notice"></p>
         <p id="error" class="error" role="alert"></p>
-        <div class="results-layout">
-          <section id="results-section" hidden>
-            <h2>Recommendations <span id="results-count"></span></h2>
+        <div id="results-layout" class="results-layout" hidden>
+          <div class="result-tabs" role="tablist" aria-label="Records">
+            <button id="recommendations-tab" type="button" role="tab" aria-controls="results-section" aria-selected="true">Recommendations <span id="results-count">(0)</span></button>
+            <button id="wantlist-tab" type="button" role="tab" aria-controls="wantlist-section" aria-selected="false" tabindex="-1">Wantlist <span id="wantlist-count">(0)</span></button>
+            <button id="demand-tab" type="button" role="tab" aria-controls="demand-section" aria-selected="false" tabindex="-1">On demand <span id="demand-count">(0)</span></button>
+          </div>
+          <section id="results-section" role="tabpanel" aria-labelledby="recommendations-tab" tabindex="0" hidden>
             <ol id="results"></ol>
             <p id="empty" hidden>No recommendations above 0.1 found so far.</p>
             <button id="more" type="button">Search more</button>
           </section>
-          <section id="wantlist-section" hidden>
-            <h2>Wantlist <span id="wantlist-count"></span></h2>
+          <section id="wantlist-section" role="tabpanel" aria-labelledby="wantlist-tab" tabindex="0" hidden>
             <ol id="wantlist"></ol>
+            <p id="wantlist-empty" class="empty-message">No wantlist matches found so far.</p>
+          </section>
+          <section id="demand-section" role="tabpanel" aria-labelledby="demand-tab" tabindex="0" hidden>
+            <p class="empty-message">Top 30 by community demand from the scanned inventory, excluding records you own or want.</p>
+            <ol id="demand-results"></ol>
+            <p id="demand-empty" class="empty-message">No records with demand found so far.</p>
           </section>
         </div>
       </div>

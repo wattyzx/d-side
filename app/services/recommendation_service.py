@@ -16,6 +16,7 @@ from app.services.recommender import (
     select_candidates,
     select_progressive_batch,
     score_release_breakdown,
+    score_demand,
 )
 from app.services.taste_service import build_taste_profile
 from app.services.search_control import SearchCancelled, check_cancelled
@@ -29,6 +30,7 @@ FULL_SCORE_LIMIT = 30
 EXPLORATION_SIZE = 5
 # Discogs rejects page > 100 for inventories belonging to other users.
 INVENTORY_PAGE_LIMIT = 100
+DEMAND_RESULT_LIMIT = 30
 
 
 def _select_candidate_batch(ranked, wantlist_ids, excluded_ids):
@@ -178,6 +180,7 @@ def _community_counts(listing) -> dict:
     return {
         "community_want": summary.community_want if summary else None,
         "community_have": summary.community_have if summary else None,
+        "demand_score": score_demand(listing),
     }
 
 
@@ -204,6 +207,43 @@ def _recommendation_payload(item, taste, score=None) -> dict:
         **_community_counts(listing),
     }
 
+def _demand_payload(listing) -> dict:
+    """Use inventory metadata without fetching another full release."""
+    summary = listing.release_summary
+    return {
+        "listing_id": listing.id,
+        "release_id": listing.release_id,
+        "title": summary.title or f"Release {listing.release_id}",
+        "thumbnail_url": summary.thumbnail_url,
+        "artists": [summary.artist] if summary.artist else [],
+        "labels": [summary.label] if summary.label else [],
+        "year": summary.year,
+        "genres": [],
+        "styles": [],
+        "price": listing.price,
+        "currency": listing.currency,
+        "condition": listing.condition,
+        "sleeve_condition": listing.sleeve_condition,
+        "score": 0.0,
+        "score_breakdown": {},
+        **_community_counts(listing),
+    }
+
+
+def _update_demand_candidates(candidates, listings, excluded_ids):
+    for listing in listings:
+        check_cancelled()
+        if listing.release_id in excluded_ids or score_demand(listing) <= 0:
+            continue
+        current = candidates.get(listing.release_id)
+        if current is None or (listing.price, listing.id) < (current.price, current.id):
+            candidates[listing.release_id] = listing
+    ranked = sorted(candidates.values(), key=lambda listing: (
+        -score_demand(listing), listing.release_id,
+    ))
+    return [_demand_payload(listing) for listing in ranked[:DEMAND_RESULT_LIMIT]]
+
+
 def _stream_event(event_type: str, **data) -> str:
     return json.dumps(
         {
@@ -220,6 +260,7 @@ def recommend_stream(
     *,
     exclude_release_ids: list[int] | None = None,
     inventory_page_limit: int | None = None,
+    include_demand: bool = False,
 ):
     try:
         # Accept the old page-limit argument for existing clients, but always
@@ -297,6 +338,7 @@ def recommend_stream(
         # -------------------------
 
         listings = []
+        demand_candidates = {}
         ranker = ListingRanker(taste, collection_ids)
 
         wantlist_seen = set()
@@ -325,6 +367,14 @@ def recommend_stream(
             listings.extend(
                 page_listings
             )
+
+            if include_demand:
+                yield _stream_event(
+                    "demand_results",
+                    records=_update_demand_candidates(
+                        demand_candidates, page_listings, collection_ids | wantlist_ids,
+                    ),
+                )
 
             # Spread the top-candidate budget across the scan, starting on
             # page 1. Reserve exploration for the complete accessible pool.

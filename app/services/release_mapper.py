@@ -90,6 +90,7 @@ def discogs_to_listing(data: dict) -> Listing:
         format=release_data.get("format"),
         community_have=stats.get("in_collection", 0),
         community_want=stats.get("in_wantlist", 0),
+        thumbnail_url=_cover_thumbnail(release_data),
 
     )
 

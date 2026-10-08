@@ -30,6 +30,16 @@ development mapping to its trusted local origin.
 
 ## Shared code and checks
 
+Results use three tabs: Recommendations, Wantlist, and On demand, each with a
+record count. Recommendations use two equal columns on desktop and one on
+mobile. On demand ranks up to 30 distinct releases from the seller's scanned
+inventory using the backend's `score_demand` formula, excluding owned and
+wantlisted records. It uses inventory metadata without extra release requests;
+covers and styles may be unavailable there. Demand snapshots update on each
+scanned page, independently of the recommendation score or its 0.1 threshold.
+Only the vanilla frontend opts into these snapshots; React searches retain
+their existing behavior.
+
 The app reuses the existing framework-independent TypeScript modules in
 `frontend/src/api/` and `frontend/src/session.ts`. Vite transpiles them. The
 session module's TanStack import is type-only and adds no runtime dependency.

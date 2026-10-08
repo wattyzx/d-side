@@ -17,6 +17,7 @@ export type Recommendation = {
   sleeve_condition: string | null;
   community_want?: number | null;
   community_have?: number | null;
+  demand_score?: number;
   score: number;
   score_breakdown: Record<string, number>;
 };
@@ -36,6 +37,7 @@ export type StreamEvent = {
   inventory_scanning?: boolean;
 
   recommendation?: Recommendation;
+  records?: Recommendation[];
 
   recommendations?: number;
   has_more?: boolean;
@@ -50,6 +52,7 @@ type StreamCallbacks = {
   excludeReleaseIds?: number[];
   searchId?: string;
   signal?: AbortSignal;
+  includeDemand?: boolean;
 };
 
 export function sortRecommendations(
@@ -79,6 +82,7 @@ export async function getRecommendations(
         seller,
         exclude_release_ids: callbacks.excludeReleaseIds ?? [],
         ...(callbacks.searchId ? { search_id: callbacks.searchId } : {}),
+        ...(callbacks.includeDemand ? { include_demand: true } : {}),
       }),
     },
     { fallback: "Could not find recommendations. Please try again." },

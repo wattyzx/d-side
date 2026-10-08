@@ -5,7 +5,13 @@ import { session } from '../../frontend/src/session.ts';
 
 const elements = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
 const state = { account: null, checking: true, active: null, cancelling: false, saving: false,
-  seller: '', searched: false, hasMore: true, records: [], wants: [], expanded: new Set() };
+  seller: '', searched: false, hasMore: true, records: [], wants: [], demands: [],
+  tab: 'recommendations', expanded: new Set() };
+const tabs = [
+  { name: 'recommendations', button: 'recommendations-tab', panel: 'results-section' },
+  { name: 'wantlist', button: 'wantlist-tab', panel: 'wantlist-section' },
+  { name: 'demand', button: 'demand-tab', panel: 'demand-section' },
+];
 const loginErrors = {
   incomplete: 'Discogs login was cancelled or incomplete. Please try again.',
   expired: 'Your login expired or did not match this browser. Please try again.',
@@ -87,8 +93,14 @@ function formatPrice(price, currency) {
   }
 }
 
-function recordRow(record, recommend) {
+function recordRow(record, recommend, demandRanked = false, rank) {
   const row = node('li', undefined, 'record-row');
+  if (rank !== undefined) {
+    row.className += ' ranked';
+    const number = node('span', `${rank}.`, 'record-rank');
+    number.setAttribute('aria-label', `Rank ${rank}`);
+    row.append(number);
+  }
   const cover = node('div', undefined, 'cover');
   const placeholder = node('span', '','cover-placeholder');
   cover.append(placeholder);
@@ -107,7 +119,7 @@ function recordRow(record, recommend) {
   }
   const details = node('div', undefined, 'record-content');
   const heading = node('div', undefined, 'heading');
-  const title = `${record.artists.join(', ')} — ${record.title}`;
+  const title = [record.artists.join(', '), record.title].filter(Boolean).join(' — ');
   const release = link(title, `https://www.discogs.com/release/${Number(record.release_id)}`, true);
   release.className = 'title';
   const price = node('span', formatPrice(record.price, record.currency), 'price');
@@ -129,7 +141,8 @@ function recordRow(record, recommend) {
     button.disabled = busy() || !state.account;
     button.setAttribute('aria-label', `Add ${title} to wantlist`);
     button.onclick = () => saveRecord(record);
-    links.append(node('span', `Score ${record.score.toFixed(2)}`));
+    links.append(node('span', demandRanked
+      ? `Demand ${record.demand_score.toFixed(2)}` : `Score ${record.score.toFixed(2)}`));
     links.append(button);
     const explanation = node('details', undefined, 'match-details');
     explanation.hidden = true;
@@ -168,12 +181,24 @@ function render() {
   elements.cancel.disabled = state.cancelling;
   elements.cancel.textContent = state.cancelling ? 'Cancelling…' : 'Cancel search';
   const visible = sortRecommendations(state.records).filter(record => record.score > 0.1);
-  elements['results-section'].hidden = !state.account || !state.searched;
-  elements['wantlist-section'].hidden = !state.account || !state.wants.length;
+  const wanted = new Set(state.wants.map(record => record.release_id));
+  const demandRecords = state.demands.filter(record => !wanted.has(record.release_id))
+    .sort((a, b) => b.demand_score - a.demand_score || a.release_id - b.release_id);
+  elements['results-layout'].hidden = !state.account || !state.searched;
+  for (const tab of tabs) {
+    const selected = tab.name === state.tab;
+    elements[tab.panel].hidden = !selected;
+    elements[tab.button].setAttribute('aria-selected', String(selected));
+    elements[tab.button].tabIndex = selected ? 0 : -1;
+  }
   elements['results-count'].textContent = `(${visible.length})`;
   elements['wantlist-count'].textContent = `(${state.wants.length})`;
-  elements.results.replaceChildren(...visible.map(record => recordRow(record, true)));
+  elements['demand-count'].textContent = `(${demandRecords.length})`;
+  elements.results.replaceChildren(...visible.map((record, index) => recordRow(record, true, false, index + 1)));
   elements.wantlist.replaceChildren(...state.wants.map(record => recordRow(record, false)));
+  elements['demand-results'].replaceChildren(...demandRecords.map((record, index) => recordRow(record, true, true, index + 1)));
+  elements['wantlist-empty'].hidden = state.wants.length > 0;
+  elements['demand-empty'].hidden = demandRecords.length > 0;
   elements.empty.hidden = !!visible.length || !!state.active;
   elements.more.disabled = busy() || !state.hasMore || !state.account;
   elements.more.textContent = state.hasMore ? 'Search more' : 'No more accessible records';
@@ -183,7 +208,7 @@ session.onEnd(() => {
   state.expanded.clear();
   state.active?.controller.abort();
   Object.assign(state, { account: null, active: null, cancelling: false, saving: false,
-    records: [], wants: [], seller: '', searched: false, hasMore: true });
+    records: [], wants: [], demands: [], tab: 'recommendations', seller: '', searched: false, hasMore: true });
   elements.notice.textContent = '';
   elements.error.textContent = '';
   status(session.getSnapshot().expired ? 'Your session expired. Connect with Discogs again.' : 'Signed out.');
@@ -221,6 +246,9 @@ function handleEvent(event) {
     case 'wantlist':
       if (event.recommendation) state.wants = upsert(state.wants, event.recommendation);
       break;
+    case 'demand_results':
+      if (Array.isArray(event.records)) state.demands = event.records;
+      break;
     case 'done':
       state.hasMore = event.has_more ?? false;
       status(state.hasMore ? 'Done — more records available' : event.inventory_truncated
@@ -237,7 +265,7 @@ async function search(more = false) {
   if (!seller || (more && !state.hasMore)) return;
   if (!more) {
     state.expanded.clear();
-    Object.assign(state, { seller, records: [], wants: [], searched: true, hasMore: true });
+    Object.assign(state, { seller, records: [], wants: [], demands: [], tab: 'recommendations', searched: true, hasMore: true });
     elements.notice.textContent = '';
   }
   elements.error.textContent = '';
@@ -248,6 +276,7 @@ async function search(more = false) {
   try {
     await getRecommendations(seller, {
       searchId: request.id, signal: request.controller.signal,
+      includeDemand: true,
       excludeReleaseIds: [...state.records, ...state.wants].map(record => record.release_id),
       onEvent: event => { if (state.active === request && !state.cancelling) handleEvent(event); },
     });
@@ -261,6 +290,24 @@ async function search(more = false) {
     render();
   }
 }
+
+function selectTab(index, focus = false) {
+  const tab = tabs[(index + tabs.length) % tabs.length];
+  state.tab = tab.name;
+  render();
+  if (focus) elements[tab.button].focus();
+}
+tabs.forEach((tab, index) => {
+  elements[tab.button].onclick = () => selectTab(index);
+  elements[tab.button].onkeydown = event => {
+    let next;
+    if (event.key === 'ArrowRight') next = index + 1;
+    if (event.key === 'ArrowLeft') next = index - 1;
+    if (event.key === 'Home') next = 0;
+    if (event.key === 'End') next = tabs.length - 1;
+    if (next !== undefined) { event.preventDefault(); selectTab(next, true); }
+  };
+});
 
 elements['search-form'].onsubmit = event => { event.preventDefault(); void search(); };
 elements.more.onclick = () => search(true);

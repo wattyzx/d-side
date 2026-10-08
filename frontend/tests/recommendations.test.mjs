@@ -80,6 +80,20 @@ test("continuation requests send scored releases without limiting inventory page
   assert.equal(events[0].has_more, false);
 });
 
+test("demand inventory is opt-in and its snapshots reach the UI", async (t) => {
+  const records = [{ ...result(99, 0), demand_score: 2.5 }];
+  t.mock.method(globalThis, "fetch", async (_, options) => {
+    assert.equal(JSON.parse(options.body).include_demand, true);
+    return new Response(JSON.stringify({ type: "demand_results", records }) + '\n' +
+      '{"type":"done"}\n');
+  });
+  const events = [];
+  assert.deepEqual(await getRecommendations("seller", {
+    includeDemand: true, onEvent: event => events.push(event),
+  }), []);
+  assert.deepEqual(events[0].records, records);
+});
+
 test("wantlist saves post release IDs and surface backend errors", async (t) => {
   let request;
   t.mock.method(globalThis, "fetch", async (url, options) => {

@@ -136,6 +136,51 @@ class RecommendationServiceTests(unittest.TestCase):
         for record in records:
             self.assertEqual(record["thumbnail_url"], self.releases[record["release_id"]].thumbnail_url)
 
+    def test_demand_view_ranks_inventory_independently_without_extra_enrichment(self):
+        self.releases[4] = Release(id=4, title="Unfamiliar", artists=["Unknown"],
+                                   labels=["Unknown"], styles=["Jazz"])
+        for listing in self.inventory["listings"]:
+            listing["release"]["stats"] = {"community": {"in_wantlist": 10, "in_collection": 100}}
+        extra = {
+            "id": 40, "release": {"id": 4, "artist": "Unknown", "title": "Unfamiliar",
+                "stats": {"community": {"in_wantlist": 100, "in_collection": 10}}},
+            "price": {"value": 20, "currency": "EUR"}, "condition": "Very Good (VG)",
+        }
+        self.inventory["listings"].extend([extra, {**extra, "id": 41,
+                                                 "price": {"value": 15, "currency": "EUR"}}])
+        with patch.object(service, "link_listing", wraps=service.link_listing) as link:
+            baseline = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+            baseline_calls = link.call_count
+            link.reset_mock()
+            events = [json.loads(line) for line in service.recommend_stream(
+                "user", "seller", include_demand=True)]
+            self.assertEqual(link.call_count, baseline_calls)
+        self.assertFalse(any(event["type"] == "demand_results" for event in baseline))
+        demand = next(event["records"] for event in events if event["type"] == "demand_results")
+        self.assertEqual([record["release_id"] for record in demand], [4, 3])
+        self.assertEqual(demand[0]["listing_id"], 41)
+        listing = next(item for item in inventory_to_listings(self.inventory) if item.id == 41)
+        self.assertAlmostEqual(demand[0]["demand_score"], recommender.score_demand(listing))
+        unfamiliar = next(event["recommendation"] for event in events
+                          if event["type"] == "recommendation" and event["recommendation"]["release_id"] == 4)
+        self.assertEqual(unfamiliar["score"], 0)
+
+    def test_demand_candidates_accumulate_pages_and_are_bounded(self):
+        from app.models.listing import Listing
+        from app.models.release_summary import ReleaseSummary
+
+        candidates = {}
+        first = [Listing(id=i, release_id=i, price=10, currency="EUR", condition="VG",
+                         release_summary=ReleaseSummary(community_want=i, community_have=1))
+                 for i in range(1, 41)]
+        results = service._update_demand_candidates(candidates, first[:20], set())
+        self.assertEqual(len(results), 20)
+        results = service._update_demand_candidates(candidates, first[20:], set())
+        self.assertEqual(len(results), service.DEMAND_RESULT_LIMIT)
+        self.assertEqual(results[0]["release_id"], 40)
+        self.assertTrue(all(results[i]["demand_score"] >= results[i+1]["demand_score"]
+                            for i in range(len(results)-1)))
+
     def test_stream_reports_upstream_errors(self):
         with patch.object(service, "get_collection", side_effect=ValueError("No collection")):
             events = [json.loads(line) for line in service.recommend_stream("user", "seller")]

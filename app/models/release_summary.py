@@ -19,3 +19,4 @@ class ReleaseSummary:
     in_collection: bool = False
     community_have: int = 0
     community_want: int = 0
+    thumbnail_url: str | None = None

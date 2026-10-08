@@ -66,6 +66,7 @@ class RecommendRequest(BaseModel):
 
 class RecommendStreamRequest(RecommendRequest):
     exclude_release_ids: list[int] = Field(default_factory=list)
+    include_demand: bool = False
 
 
 class CancelSearchRequest(BaseModel):
@@ -120,7 +121,8 @@ def recommend_stream_endpoint(
     job = start_search(account, request.search_id)
     try:
         iterator = recommend_stream(username=account.username, seller=request.seller,
-                                    exclude_release_ids=request.exclude_release_ids)
+                                    exclude_release_ids=request.exclude_release_ids,
+                                    **({"include_demand": True} if request.include_demand else {}))
         return SearchStreamingResponse(iterator, account, job)
     except Exception:
         search_registry.finish(job)
