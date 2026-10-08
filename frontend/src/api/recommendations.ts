@@ -5,6 +5,7 @@ export type Recommendation = {
   listing_id: number;
   release_id: number;
   title: string;
+  thumbnail_url?: string | null;
   artists: string[];
   labels: string[];
   year: number | null;
@@ -14,6 +15,8 @@ export type Recommendation = {
   currency: string;
   condition: string;
   sleeve_condition: string | null;
+  community_want?: number | null;
+  community_have?: number | null;
   score: number;
   score_breakdown: Record<string, number>;
 };

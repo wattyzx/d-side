@@ -23,3 +23,5 @@ class Release:
     catalog_numbers: list[str] = field(default_factory=list)
 
     formats: list[str] = field(default_factory=list)
+
+    thumbnail_url: str | None = None

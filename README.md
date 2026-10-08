@@ -57,6 +57,20 @@ Vite proxies API and authentication requests to the backend. Use `localhost:5173
 Press **Ctrl+C** to stop both servers. Later starts use `.venv` automatically.
 Restart the servers after changing configuration.
 
+### Try the vanilla frontend locally
+
+Keep `./run.sh` running, then open a second terminal:
+
+```sh
+npm run dev --prefix frontend-vanilla
+```
+
+Compare the HTML/CSS/vanilla JavaScript experiment at `http://localhost:5174`
+with React at `http://localhost:5173`. After Discogs login returns to React,
+return to port 5174 and refresh the connection. Both use the same backend and
+share the login cookie. See [the experiment guide](frontend-vanilla/README.md)
+for the development proxy, shared API code, and checks.
+
 ### Serve the built frontend with FastAPI
 
 Frontend serving is optional and disabled by default. After building React, enable it to serve the website and API from the same address without Vite:

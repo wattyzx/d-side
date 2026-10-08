@@ -2,6 +2,15 @@ from app.models.release import Release
 from app.models.listing import Listing
 from app.models.release_summary import ReleaseSummary
 
+def _cover_thumbnail(data: dict) -> str | None:
+    images = data.get("images") or []
+    primary = [image for image in images if image.get("type") == "primary"]
+    candidates = [data.get("thumb"), data.get("cover_image")]
+    for image in primary + [image for image in images if image.get("type") != "primary"]:
+        candidates.extend((image.get("uri150"), image.get("uri")))
+    return next((url for url in candidates
+                 if isinstance(url, str) and url.startswith(("https://", "http://"))), None)
+
 def discogs_to_release(data: dict) -> Release:
 
     artists = [
@@ -38,6 +47,7 @@ def discogs_to_release(data: dict) -> Release:
         labels=labels,
         catalog_numbers=catalog_numbers,
         formats=formats,
+        thumbnail_url=_cover_thumbnail(data),
     )
 
 def collection_item_to_release(item: dict) -> Release:

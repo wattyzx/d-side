@@ -144,6 +144,7 @@ def recommend(
                 "listing_id": listing.id,
                 "release_id": release.id,
                 "title": release.title,
+                "thumbnail_url": release.thumbnail_url,
                 "artists": release.artists,
                 "labels": release.labels,
                 "year": release.year,
@@ -157,6 +158,7 @@ def recommend(
                 ),
                 "score": round(score, 4),
                 "score_breakdown": breakdown,
+                **_community_counts(listing),
             }
         )
 
@@ -171,6 +173,14 @@ def recommend(
         "recommendations": recommendations,
     }
 
+def _community_counts(listing) -> dict:
+    summary = listing.release_summary
+    return {
+        "community_want": summary.community_want if summary else None,
+        "community_have": summary.community_have if summary else None,
+    }
+
+
 def _recommendation_payload(item, taste, score=None) -> dict:
     release = item.release
     listing = item.listing
@@ -179,6 +189,7 @@ def _recommendation_payload(item, taste, score=None) -> dict:
         "listing_id": listing.id,
         "release_id": release.id,
         "title": release.title,
+        "thumbnail_url": release.thumbnail_url,
         "artists": release.artists,
         "labels": release.labels,
         "year": release.year,
@@ -190,6 +201,7 @@ def _recommendation_payload(item, taste, score=None) -> dict:
         "sleeve_condition": listing.sleeve_condition,
         "score": round(breakdown["total"] if score is None else score, 4),
         "score_breakdown": breakdown,
+        **_community_counts(listing),
     }
 
 def _stream_event(event_type: str, **data) -> str:

@@ -110,6 +110,32 @@ class RecommendationServiceTests(unittest.TestCase):
             "inventory_truncated": False,
         })
 
+    def test_community_counts_reach_regular_and_streamed_results(self):
+        for listing in self.inventory["listings"]:
+            listing["release"]["stats"] = {
+                "community": {"in_wantlist": 150, "in_collection": 50},
+            }
+        regular = service.recommend("user", "seller")["recommendations"]
+        streamed = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        records = regular + [event["recommendation"] for event in streamed
+                             if event["type"] in ("recommendation", "wantlist")]
+        self.assertEqual(len(records), 3)
+        for record in records:
+            self.assertEqual(record["community_want"], 150)
+            self.assertEqual(record["community_have"], 50)
+
+    def test_covers_reach_regular_and_streamed_results(self):
+        self.releases[2].thumbnail_url = "https://example.com/want.jpg"
+        self.releases[3].thumbnail_url = "https://example.com/recommendation.jpg"
+        regular = service.recommend("user", "seller")["recommendations"]
+        self.assertEqual(regular[0]["thumbnail_url"], self.releases[3].thumbnail_url)
+        streamed = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        records = [event["recommendation"] for event in streamed
+                   if event["type"] in ("recommendation", "wantlist")]
+        self.assertEqual(len(records), 2)
+        for record in records:
+            self.assertEqual(record["thumbnail_url"], self.releases[record["release_id"]].thumbnail_url)
+
     def test_stream_reports_upstream_errors(self):
         with patch.object(service, "get_collection", side_effect=ValueError("No collection")):
             events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
