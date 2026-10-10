@@ -1,14 +1,16 @@
 :root {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family:'Courier New', Courier, monospace;
   font-size: 14px;
+  letter-spacing: -1px;
   line-height: 1.5;
   color: #222;
   background: #fff;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; }
-main { max-width: 1100px; margin: 0 auto; padding: 24px; }
+body { margin: 0; min-height: 100vh; background: #cdd3cf; }
+main { width: min(1000px, calc(100% - 48px)); min-height: min(1000px, calc(100vw - 48px)); margin: 24px auto; padding: 20px; background: #111 url('/cover_2.png') center top / 100% auto no-repeat; border: 1px solid #aab3ad; box-shadow: 0 12px 36px #25312933; }
+.content { padding: 12px 20px 20px; background: rgb(239 243 239 / 97%); border: 1px solid #c4cdc5; }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
@@ -18,9 +20,18 @@ form,
 .heading,
 .links { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
 
-header { justify-content: space-between; margin-bottom: 28px; }
-.brand { font-size: 40px; font-weight: 700; letter-spacing: -4.0px; }
-#account { color: #666; font-size: 12px; }
+header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 20px; margin-bottom: 12px; padding: 16px 20px; background: #e8ede7; color: #222; font-size: 12px; border: 1px solid #bac4bd; border-bottom: 3px solid #c73b36; box-shadow: 0 2px 5px #0002; }
+.brand { display: flex; flex-direction: column; color: #c73b36; font-size: 38px; font-weight: 800; letter-spacing: .0px; line-height: 1; }
+.brand:hover { text-decoration: none; }
+.brand-subtitle { margin-top: 6px; color: #48574e; font-size: 12px; font-weight: 400; letter-spacing: .3px; }
+.sleeve-account { max-width: 180px; min-width: 0; }
+.sticker-caption { display: block; margin-bottom: 5px; color: #69766d; font-size: 9px; text-transform: uppercase; letter-spacing: 1px; }
+#account { color: #3d4941; font-size: 11px; gap: 4px 10px; }
+header #search-form { align-items: center; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+header input { flex: 1; width: 160px; padding: 5px 8px; background: #f6f8f4; color: #222; border-color: #aeb9b1; }
+header button { padding: 4px 8px; white-space: nowrap; background: transparent; color: #222; border-color: #aaa; }
+header #search { background: #c73b36; color: #fff; border-color: #c73b36; }
+header :focus-visible { outline-color: #222; }
 
 input,
 button { font: inherit; color: inherit; padding: 6px 10px; border: 1px solid #ccc; border-radius: 0; background: #fff; }
@@ -46,8 +57,8 @@ p:empty { display: none; }
 .results-layout { margin-top: 24px; }
 .results-layout > section { min-width: 0; overflow-wrap: anywhere; }
 .result-tabs { display: flex; flex-wrap: wrap; gap: 8px 24px; border-bottom: 1px solid #e5e5e5; margin-bottom: 20px; }
-.result-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 8px 0; color: #777; }
-.result-tabs button[aria-selected="true"] { border-bottom-color: #222; color: #222; }
+.result-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 8px 0; background: transparent; color: #777; }
+.result-tabs button[aria-selected="true"] { border-bottom-color: #c73b36; color: #222; }
 .result-tabs span { font-size: 12px; color: #777; }
 h2 { margin: 0 0 16px; font-size: 13px; font-weight: 600; }
 h2 span { margin-left: 4px; color: #777; font-weight: normal; }
@@ -97,8 +108,12 @@ body.player-open { padding-bottom: 280px; }
 .player-video iframe { display: block; width: 100%; height: 200px; border: 0; }
 
 @media (max-width: 700px) {
-  main { padding: 16px; }
-  header { gap: 12px; margin-bottom: 24px; }
+  main { width: calc(100% - 16px); min-height: calc(100vw - 16px); margin: 8px auto; padding: 12px; }
+  .content { padding: 12px; }
+  header { grid-template-columns: minmax(0, 1fr) auto; gap: 14px 12px; padding: 12px; }
+  .brand { font-size: 30px; }
+  .sleeve-account { grid-column: 2; grid-row: 1; max-width: 140px; }
+  header #search-form { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; }
   #results, #wantlist, #demand-results { grid-template-columns: minmax(0, 1fr); }
   .player-bar { gap: 10px; padding: 8px 12px; }
   #player-message { bottom: 272px; max-width: 100%; }

@@ -140,7 +140,9 @@ Candidate selection:
 
 Implementations:
 
-- [ ] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
+- [ ] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
+- [ ] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
+- [X] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
 - [ ] Add a **Add to cart** button next to each release. 
 
 Steps towards deployment:

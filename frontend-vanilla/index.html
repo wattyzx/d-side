@@ -3,23 +3,28 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>D(e)Side — Decide what to dig</title>
+    <title>D-Side — Decide what to dig</title>
     <link rel="stylesheet" href="/src/style.css">
   </head>
   <body>
     <main>
       <header>
-        <a class="brand" href="/">D(e)Side</a>
-        <div id="account" aria-label="Discogs account"></div>
-      </header>
-      <div class="content">
-        <p id="account-error" class="error" role="alert"></p>
+        <a class="brand" href="/">
+          <span>D-Side</span>
+          <span class="brand-subtitle">Decide what to dig</span>
+        </a>
         <form id="search-form">
-          <label for="seller">Seller</label>
-          <input id="seller" name="seller" placeholder="Discogs seller name" required autocomplete="off">
+          <input id="seller" name="seller" aria-label="Discogs seller" placeholder="Discogs seller" required autocomplete="off">
           <button id="search" disabled>Find records</button>
           <button id="cancel" type="button" hidden>Cancel search</button>
         </form>
+        <div class="sleeve-account">
+          <span class="sticker-caption">Your Discogs account</span>
+          <div id="account" aria-label="Discogs account"></div>
+        </div>
+      </header>
+      <div class="content">
+        <p id="account-error" class="error" role="alert"></p>
         <p id="status" role="status" aria-live="polite">Checking your connection…</p>
         <p id="notice"></p>
         <p id="error" class="error" role="alert"></p>
