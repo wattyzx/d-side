@@ -13,6 +13,16 @@ const result = (id, score) => ({
 const eventLine = (recommendation) =>
   JSON.stringify({ type: "recommendation", recommendation }) + "\n";
 
+test("price bounds including zero are sent with continuation exclusions", async (t) => {
+  t.mock.method(globalThis, "fetch", async (_, options) => {
+    assert.deepEqual(JSON.parse(options.body), {
+      seller: "shop", min_price: 0, max_price: 20.5, exclude_release_ids: [123],
+    });
+    return new Response('{"type":"done"}\n');
+  });
+  await getRecommendations("shop", { minPrice: 0, maxPrice: 20.5, excludeReleaseIds: [123] });
+});
+
 test("publishes each result before completion and returns results sorted by score", async (t) => {
   let controller;
   const body = new ReadableStream({ start(value) { controller = value; } });

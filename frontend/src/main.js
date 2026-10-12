@@ -9,7 +9,7 @@ const previewPlayer = createReleasePlayer();
 const elements = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
 const state = { account: null, checking: true, active: null, cancelling: false, saving: false,
   seller: '', searched: false, hasMore: true, records: [], wants: [], demands: [],
-  tab: 'recommendations', expanded: new Set() };
+  tab: 'recommendations', expanded: new Set(), priceRange: {} };
 const tabs = [
   { name: 'recommendations', button: 'recommendations-tab', panel: 'results-section' },
   { name: 'wantlist', button: 'wantlist-tab', panel: 'wantlist-section' },
@@ -38,6 +38,24 @@ function link(text, href, external = false) {
 }
 function busy() { return !!state.active || state.cancelling || state.saving; }
 function status(text) { elements.status.textContent = text; }
+
+function priceRange() {
+  return {
+    minPrice: elements['min-price'].value === '' ? undefined : elements['min-price'].valueAsNumber,
+    maxPrice: elements['max-price'].value === '' ? undefined : elements['max-price'].valueAsNumber,
+  };
+}
+
+function priceRangeChanged() {
+  const range = priceRange();
+  return range.minPrice !== state.priceRange.minPrice || range.maxPrice !== state.priceRange.maxPrice;
+}
+
+function validatePrices() {
+  const { minPrice, maxPrice } = priceRange();
+  elements['max-price'].setCustomValidity(minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice
+    ? 'Maximum price must be at least the minimum price.' : '');
+}
 
 function renderAccount() {
   const container = elements.account;
@@ -187,6 +205,8 @@ function render() {
   elements.search.textContent = state.active ? 'Finding records…' : 'Find records';
   elements.search.setAttribute('aria-busy', String(!!state.active));
   elements.seller.disabled = busy();
+  elements['min-price'].disabled = busy();
+  elements['max-price'].disabled = busy();
   elements.cancel.hidden = !state.active && !state.cancelling;
   elements.cancel.disabled = state.cancelling;
   elements.cancel.textContent = state.cancelling ? 'Cancelling…' : 'Cancel search';
@@ -210,8 +230,9 @@ function render() {
   elements['wantlist-empty'].hidden = state.wants.length > 0;
   elements['demand-empty'].hidden = demandRecords.length > 0;
   elements.empty.hidden = !!visible.length || !!state.active;
-  elements.more.disabled = busy() || !state.hasMore || !state.account;
-  elements.more.textContent = state.hasMore ? 'Search more' : 'No more accessible records';
+  elements.more.disabled = busy() || !state.hasMore || !state.account || priceRangeChanged();
+  elements.more.textContent = priceRangeChanged() ? 'Use Find records to apply new prices'
+    : state.hasMore ? 'Search more' : 'No more accessible records';
 }
 
 session.onEnd(() => {
@@ -272,9 +293,15 @@ function handleEvent(event) {
 
 async function search(more = false) {
   if (!state.account || busy()) return;
+  if (more && priceRangeChanged()) return;
+  if (!more) {
+    validatePrices();
+    if (!elements['search-form'].reportValidity()) return;
+  }
   const seller = more ? state.seller : elements.seller.value.trim();
   if (!seller || (more && !state.hasMore)) return;
   if (!more) {
+    state.priceRange = priceRange();
     state.expanded.clear();
     Object.assign(state, { seller, records: [], wants: [], demands: [], tab: 'recommendations', searched: true, hasMore: true });
     elements.notice.textContent = '';
@@ -288,6 +315,7 @@ async function search(more = false) {
     await getRecommendations(seller, {
       searchId: request.id, signal: request.controller.signal,
       includeDemand: true,
+      ...state.priceRange,
       excludeReleaseIds: [...state.records, ...state.wants].map(record => record.release_id),
       onEvent: event => { if (state.active === request && !state.cancelling) handleEvent(event); },
     });
@@ -320,6 +348,9 @@ tabs.forEach((tab, index) => {
   };
 });
 
+for (const id of ['min-price', 'max-price']) {
+  elements[id].oninput = () => { validatePrices(); render(); };
+}
 elements['search-form'].onsubmit = event => { event.preventDefault(); void search(); };
 elements.more.onclick = () => search(true);
 elements.cancel.onclick = async () => {

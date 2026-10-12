@@ -55,6 +55,10 @@ button:disabled { cursor: default; opacity: .45; }
 p:empty { display: none; }
 
 .results-layout { margin-top: 24px; }
+.price-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; margin: 8px 0 16px; font-size: 12px; }
+.price-filters label { display: flex; flex-direction: column; gap: 4px; }
+.price-filters input { width: 140px; }
+#price-help { flex-basis: 100%; margin: 0; color: #666; }
 .results-layout > section { min-width: 0; overflow-wrap: anywhere; }
 .result-tabs { display: flex; flex-wrap: wrap; gap: 8px 24px; border-bottom: 1px solid #e5e5e5; margin-bottom: 20px; }
 .result-tabs button { border: 0; border-bottom: 2px solid transparent; padding: 8px 0; background: transparent; color: #777; }

@@ -1,5 +1,5 @@
 import json
-from math import ceil
+from math import ceil, isfinite
 
 from app.services.discogs_client import (
     get_collection,
@@ -33,6 +33,19 @@ INVENTORY_PAGE_LIMIT = 100
 DEMAND_RESULT_LIMIT = 30
 
 
+def validate_price_range(min_price, max_price):
+    for price in (min_price, max_price):
+        if price is not None and (not isfinite(price) or price < 0):
+            raise ValueError("Prices must be finite, non-negative numbers")
+    if min_price is not None and max_price is not None and min_price > max_price:
+        raise ValueError("Minimum price must not exceed maximum price")
+
+
+def _in_price_range(listing, min_price, max_price):
+    return ((min_price is None or listing.price >= min_price)
+            and (max_price is None or listing.price <= max_price))
+
+
 def _select_candidate_batch(ranked, wantlist_ids, excluded_ids):
     # Keep the entire eligible pool so exploration can reach lower ranks.
     eligible = select_candidates(
@@ -51,7 +64,11 @@ def _select_candidate_batch(ranked, wantlist_ids, excluded_ids):
 def recommend(
     username: str,
     seller: str,
+    *,
+    min_price: float | None = None,
+    max_price: float | None = None,
 ) -> dict:
+    validate_price_range(min_price, max_price)
     # -------------------------
     # USER DATA
     # -------------------------
@@ -101,7 +118,7 @@ def recommend(
     # -------------------------
 
     ranked = rank_listings(
-        listings,
+        [listing for listing in listings if _in_price_range(listing, min_price, max_price)],
         taste,
         collection_ids,
     )
@@ -264,8 +281,11 @@ def recommend_stream(
     exclude_release_ids: list[int] | None = None,
     inventory_page_limit: int | None = None,
     include_demand: bool = False,
+    min_price: float | None = None,
+    max_price: float | None = None,
 ):
     try:
+        validate_price_range(min_price, max_price)
         # Accept the old page-limit argument for existing clients, but always
         # scan all accessible pages, up to Discogs' limit for other sellers.
         if inventory_page_limit is not None and inventory_page_limit < 1:
@@ -372,6 +392,11 @@ def recommend_stream(
             listings.extend(
                 page_listings
             )
+
+            # Filter individual copies before ranking, deduplication, or enrichment.
+            # Keep the scanned-listing count above independent of the price range.
+            page_listings = [listing for listing in page_listings
+                             if _in_price_range(listing, min_price, max_price)]
 
             if include_demand:
                 yield _stream_event(

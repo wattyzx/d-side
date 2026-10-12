@@ -24,6 +24,15 @@
         </div>
       </header>
       <div class="content">
+        <div class="price-filters">
+          <label for="min-price">Min price
+            <input id="min-price" form="search-form" type="number" min="0" step="any" placeholder="No minimum" aria-describedby="price-help">
+          </label>
+          <label for="max-price">Max price
+            <input id="max-price" form="search-form" type="number" min="0" step="any" placeholder="No maximum" aria-describedby="price-help">
+          </label>
+          <p id="price-help">Listing prices in the seller’s currency, excluding shipping. Choose a range before searching.</p>
+        </div>
         <p id="account-error" class="error" role="alert"></p>
         <p id="status" role="status" aria-live="polite">Checking your connection…</p>
         <p id="notice"></p>

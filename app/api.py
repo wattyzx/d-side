@@ -5,7 +5,7 @@ import anyio
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.config import PROJECT_ROOT, get_settings, load_environment
 from app.frontend import mount_frontend
@@ -26,6 +26,7 @@ from starlette.concurrency import run_in_threadpool
 from app.services.recommendation_service import (
     recommend,
     recommend_stream,
+    validate_price_range,
 )
 
 @asynccontextmanager
@@ -62,6 +63,16 @@ app.add_middleware(
 class RecommendRequest(BaseModel):
     seller: str = Field(min_length=1)
     search_id: UUID | None = None
+    min_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    max_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def check_price_range(self):
+        validate_price_range(self.min_price, self.max_price)
+        return self
+
+    def price_options(self):
+        return self.model_dump(include={"min_price", "max_price"}, exclude_none=True)
 
 
 class RecommendStreamRequest(RecommendRequest):
@@ -104,7 +115,8 @@ async def recommend_endpoint(
     job = start_search(account, request.search_id)
     try:
         return await run_search(connection, account, job,
-                                lambda: recommend(username=account.username, seller=request.seller))
+                                lambda: recommend(username=account.username, seller=request.seller,
+                                                  **request.price_options()))
     except SearchCancelled:
         raise HTTPException(499, "Search cancelled.") from None
     except ValueError as exc:
@@ -122,6 +134,7 @@ def recommend_stream_endpoint(
     try:
         iterator = recommend_stream(username=account.username, seller=request.seller,
                                     exclude_release_ids=request.exclude_release_ids,
+                                    **request.price_options(),
                                     **({"include_demand": True} if request.include_demand else {}))
         return SearchStreamingResponse(iterator, account, job)
     except Exception:

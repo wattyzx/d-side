@@ -61,6 +61,61 @@ class RecommendationServiceTests(unittest.TestCase):
         self.assertEqual(result["recommendations"][0]["release_id"], 3)
         self.assertGreater(result["recommendations"][0]["score"], 0)
 
+    def test_price_band_filters_copies_before_ranking_wants_and_demand(self):
+        for release_id in (4, 5, 6):
+            self.releases[release_id] = Release(release_id, f"Release {release_id}", styles=["House"])
+        self.inventory["listings"] = [{
+            "id": index, "release": {"id": release_id, "artist": "Artist",
+                "stats": {"community": {"in_collection": 10, "in_wantlist": 100}}},
+            "price": {"value": price, "currency": "EUR"}, "condition": "Mint (M)",
+        } for index, (release_id, price) in enumerate(
+            [(3, 2), (3, 15), (2, 30), (2, 10), (4, 40), (5, 20), (6, 9)], start=100)]
+        with patch.object(service, "link_listing", wraps=service.link_listing) as link:
+            events = [json.loads(line) for line in service.recommend_stream(
+                "user", "seller", min_price=10, max_price=20, include_demand=True,
+            )]
+        self.assertEqual({call.args[0].release_id for call in link.call_args_list}, {2, 3, 5})
+        recommendations = [e["recommendation"] for e in events if e["type"] == "recommendation"]
+        self.assertEqual({(r["release_id"], r["price"]) for r in recommendations}, {(3, 15), (5, 20)})
+        self.assertEqual([(e["recommendation"]["release_id"], e["recommendation"]["price"])
+                          for e in events if e["type"] == "wantlist"], [(2, 10)])
+        demand = next(e["records"] for e in events if e["type"] == "demand_results")
+        self.assertEqual({(r["release_id"], r["price"]) for r in demand}, {(3, 15), (5, 20)})
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertFalse(events[-1]["has_more"])
+        self.assertEqual(next(e["listings"] for e in events if e["type"] == "inventory_complete"), 7)
+        regular = service.recommend("user", "seller", min_price=10, max_price=20)
+        self.assertEqual({(r["release_id"], r["price"]) for r in regular["recommendations"]}, {(3, 15), (5, 20)})
+        continued = [json.loads(line) for line in service.recommend_stream(
+            "user", "seller", min_price=10, max_price=20, exclude_release_ids=[2, 3],
+        )]
+        self.assertEqual([e["recommendation"]["release_id"] for e in continued
+                          if e["type"] == "recommendation"], [5])
+
+    def test_price_bounds_are_optional_inclusive_and_zero_is_a_bound(self):
+        for options, count in (({}, 1), ({"min_price": 10}, 1), ({"max_price": 10}, 1),
+                               ({"min_price": 10, "max_price": 10}, 1),
+                               ({"max_price": 0}, 0), ({"min_price": 10.01}, 0)):
+            with self.subTest(options=options), patch.object(service, "link_listing", wraps=service.link_listing) as link:
+                events = [json.loads(line) for line in service.recommend_stream("user", "seller", **options)]
+                self.assertEqual(events[-1]["type"], "done")
+                self.assertEqual(events[-1]["recommendations"], count)
+                self.assertEqual(link.call_count, count * 2)  # One recommendation and one wantlist match.
+                self.assertEqual(len(service.recommend("user", "seller", **options)["recommendations"]), count)
+
+    def test_out_of_band_early_pages_do_not_consume_candidate_budget(self):
+        expensive = {"pagination": {"pages": 2}, "listings": [{
+            "id": release_id, "release": {"id": release_id, "artist": "Artist"},
+            "price": {"value": 100, "currency": "EUR"}, "condition": "Mint (M)",
+        } for release_id in range(100, 140)]}
+        with patch.object(service, "get_inventory_raw", side_effect=lambda *args, page, **kwargs:
+                          expensive if page == 1 else self.inventory), \
+             patch.object(service, "link_listing", wraps=service.link_listing) as link:
+            events = [json.loads(line) for line in service.recommend_stream("user", "seller", max_price=20)]
+        self.assertEqual({call.args[0].release_id for call in link.call_args_list}, {2, 3})
+        self.assertEqual(events[-1]["recommendations"], 1)
+        self.assertFalse(events[-1]["has_more"])
+
     @staticmethod
     def release_error(status):
         response = httpx.Response(status, request=httpx.Request("GET", "https://api.discogs.com/releases/3"))

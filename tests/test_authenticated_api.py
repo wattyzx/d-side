@@ -46,6 +46,26 @@ class AuthenticatedAPITests(unittest.TestCase):
     def credentials(self, username):
         return DiscogsCredentials(username, username + "-token", username + "-secret", "consumer", "secret")
 
+    def test_price_range_is_validated_before_search_and_forwarded_to_both_endpoints(self):
+        client = self.client("Alice")
+        for endpoint in ("/recommend", "/recommend/stream"):
+            for bounds in ({"min_price": -1}, {"max_price": -1},
+                           {"min_price": 20, "max_price": 10},
+                           {"min_price": "NaN"}, {"max_price": "Infinity"}):
+                with self.subTest(endpoint=endpoint, bounds=bounds):
+                    self.assertEqual(client.post(endpoint, json={"seller": "shop", **bounds}).status_code, 422)
+        with patch("app.api.recommend", return_value={}) as recommend:
+            response = client.post("/recommend", json={"seller": "shop", "min_price": 0, "max_price": 20})
+            self.assertEqual(response.status_code, 200)
+            recommend.assert_called_once_with(username="Alice", seller="shop", min_price=0, max_price=20)
+        with patch("app.api.recommend_stream", return_value=iter(['{"type":"done"}\n'])) as stream:
+            response = client.post("/recommend/stream", json={
+                "seller": "shop", "min_price": 10, "max_price": 20, "exclude_release_ids": [3],
+            })
+            self.assertEqual(response.status_code, 200)
+            stream.assert_called_once_with(username="Alice", seller="shop", exclude_release_ids=[3],
+                                           min_price=10, max_price=20)
+
     def test_all_personal_endpoints_require_login(self):
         client = self.client()
         for path, body in (("/recommend", {"seller": "shop"}),

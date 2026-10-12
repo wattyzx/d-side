@@ -17,12 +17,6 @@ You can open each record on Discogs or add it straight to your wantlist.
 
 Results arrive during the search. **Search more** scores another batch of unseen releases from the scanned inventory. **Cancel search** keeps results already received and stops further work once any in-flight Discogs request finishes or times out.
 
-Individual release lookups returning **404 or 410** are skipped so the search
-can continue. Other copies of the unavailable release are not retried within
-the same search. Failed candidate lookups still count toward the metadata
-request budget; completed-result counts include only releases successfully
-loaded. Other upstream failures continue to surface as search errors.
-
 ## Design choices and issues solved
 
 - **Two stage ranking:** Marketplace summaries lack musical styles. Pre-ranking uses available metadata to limit full requests to a small candidate batch, balancing discovery with Discogs rate limits. Early candidates depend on the inventory scanned so far, so they can differ from a ranking of the complete inventory.

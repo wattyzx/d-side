@@ -60,6 +60,8 @@ type StreamCallbacks = {
   searchId?: string;
   signal?: AbortSignal;
   includeDemand?: boolean;
+  minPrice?: number;
+  maxPrice?: number;
 };
 
 export function sortRecommendations(
@@ -90,6 +92,8 @@ export async function getRecommendations(
         exclude_release_ids: callbacks.excludeReleaseIds ?? [],
         ...(callbacks.searchId ? { search_id: callbacks.searchId } : {}),
         ...(callbacks.includeDemand ? { include_demand: true } : {}),
+        ...(callbacks.minPrice !== undefined ? { min_price: callbacks.minPrice } : {}),
+        ...(callbacks.maxPrice !== undefined ? { max_price: callbacks.maxPrice } : {}),
       }),
     },
     { fallback: "Could not find recommendations. Please try again." },
