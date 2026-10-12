@@ -346,6 +346,8 @@ def recommend_stream(
 
         wantlist_seen = set()
         scored_ids = set()
+        attempted_ids = set()
+        skipped_ids = set()
         more_candidates = False
         exploit_limit = FULL_SCORE_LIMIT - EXPLORATION_SIZE
 
@@ -385,21 +387,21 @@ def recommend_stream(
             final_page = page == len(sample_pages)
             target = ceil(exploit_limit * page / len(sample_pages))
             eligible = []
-            if target > len(scored_ids) or final_page:
+            if target > len(attempted_ids) or final_page:
                 ranked = ranker.ranked()
                 eligible = select_candidates(
                     ranked, wantlist_ids,
-                    collection_ids | excluded_ids | scored_ids,
+                    collection_ids | excluded_ids | attempted_ids | skipped_ids,
                     limit=len(ranked),
                 )
             candidates, exploration = select_progressive_batch(
                 eligible,
                 selected_ids=set(),
-                exploit_size=max(0, target - len(scored_ids)),
+                exploit_size=max(0, target - len(attempted_ids)),
                 explore_size=EXPLORATION_SIZE if final_page else 0,
             )
             candidates += exploration
-            total_candidates = len(scored_ids) + len(candidates)
+            total_candidates = len(attempted_ids) + len(candidates)
             if final_page:
                 more_candidates = len(eligible) > len(candidates)
                 yield _stream_event(
@@ -409,11 +411,16 @@ def recommend_stream(
             # Yield each score before fetching another release or enriching
             # wantlist matches, so neither can hold back a ready result.
             for listing in candidates:
+                # Missing releases still consume a lookup from the request budget.
+                attempted_ids.add(listing.release_id)
                 item = link_listing(listing)
+                if item is None:
+                    skipped_ids.add(listing.release_id)
+                    continue
                 scored_ids.add(listing.release_id)
                 yield _stream_event(
                     "recommendation",
-                    processed=len(scored_ids),
+                    processed=len(attempted_ids),
                     candidates=total_candidates if final_page else FULL_SCORE_LIMIT,
                     inventory_scanning=not final_page,
                     recommendation=_recommendation_payload(item, taste),
@@ -432,17 +439,20 @@ def recommend_stream(
                     and listing.release_id
                     not in collection_ids
                     and listing.release_id not in excluded_ids
+                    and listing.release_id not in skipped_ids
                     and listing.release_id
                     not in wantlist_seen
                 ):
-                    wantlist_seen.add(
-                        listing.release_id
-                    )
+                    item = link_listing(listing)
+                    if item is None:
+                        skipped_ids.add(listing.release_id)
+                        continue
+                    wantlist_seen.add(listing.release_id)
 
                     yield _stream_event(
                         "wantlist",
                         recommendation=_recommendation_payload(
-                            link_listing(listing), taste,
+                            item, taste,
                         ),
                     )
 

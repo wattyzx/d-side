@@ -17,6 +17,12 @@ You can open each record on Discogs or add it straight to your wantlist.
 
 Results arrive during the search. **Search more** scores another batch of unseen releases from the scanned inventory. **Cancel search** keeps results already received and stops further work once any in-flight Discogs request finishes or times out.
 
+Individual release lookups returning **404 or 410** are skipped so the search
+can continue. Other copies of the unavailable release are not retried within
+the same search. Failed candidate lookups still count toward the metadata
+request budget; completed-result counts include only releases successfully
+loaded. Other upstream failures continue to surface as search errors.
+
 ## Design choices and issues solved
 
 - **Two stage ranking:** Marketplace summaries lack musical styles. Pre-ranking uses available metadata to limit full requests to a small candidate batch, balancing discovery with Discogs rate limits. Early candidates depend on the inventory scanned so far, so they can differ from a ranking of the complete inventory.
@@ -132,16 +138,16 @@ Authentication and response caches currently use local SQLite storage.
 
 Candidate selection:
 
-- [ ] Build a dataset of releases with artists, labels, years, and styles; hold evaluation releases apart from training data.
-- [ ] Train a simple baseline to predict likely styles from listing metadata.
-- [ ] Compare candidate relevance with the current pre-ranker under the same full-metadata request budget.
+- [ ] Build a dataset of releases with artists, labels, years, and styles; keep evaluation releases and their alternate editions apart from training data.
+- [ ] Build an artist/label style-frequency baseline, then train one-vs-rest logistic regression to predict styles from listing metadata.
+- [ ] Compare both approaches with the current pre-ranker under the same progressive selection behavior and full-metadata request budget; see the [style pre-ranking proposal](docs/style-pre-ranking.md).
 - [ ] Integrate behind a feature flag, retaining the current fallback and actual Discogs styles for final scoring.
 - [ ] Evaluate artist and label similarity after the baseline.
 
 Implementations:
 
-- [ ] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
-- [ ] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
+- [x] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
+- [x] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
 - [X] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
 - [ ] Add a **Add to cart** button next to each release. 
 
@@ -159,8 +165,8 @@ Steps towards deployment:
 
 **Hosted prototype:** The proposed setup is a React static site and FastAPI service on Render, with Turso for persistent storage. Deployment is still planned.
 
-**Artist and label similarity:** Explore shared styles, release eras, and catalogue relationships to surface unfamiliar but related names. Start with a simple similarity baseline, then evaluate graph embeddings as a small pre-ranking bonus.
+**Style pre-ranking:** Start with artist/label style frequencies, then test one-vs-rest logistic regression using artist, label, and year. Compare predicted styles with the user's collection profile to help select promising records before fetching full metadata. Evaluate offline under the existing 30-release enrichment budget, retaining five exploration slots and actual Discogs styles for final scoring. This is proposed; no model has been trained or integrated. See the [style pre-ranking proposal](docs/style-pre-ranking.md).
+
+**Artist and label similarity:** After the style baseline, explore shared styles, release eras, and catalogue relationships to surface unfamiliar but related names. Start with a simple similarity baseline, then evaluate graph embeddings such as node2vec as a small pre-ranking bonus.
 This is proposed and has not been trained or integrated; see the
 [artist and label similarity experiment](docs/artist-label-similarity.md).
-
-**Style pre-ranking:** Test whether predicted styles select better candidates within the same request budget. 

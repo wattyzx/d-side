@@ -2,10 +2,14 @@ import json
 import unittest
 from unittest.mock import patch
 
+import httpx
+
 from app.models.inventory_item import InventoryItem
 from app.models.release import Release
 from app.services import recommendation_service as service
 from app.services import recommender
+from app.services import inventory_service
+from app.services.release_cache import ReleaseCache
 from app.services.release_mapper import inventory_to_listings
 
 
@@ -56,6 +60,102 @@ class RecommendationServiceTests(unittest.TestCase):
         self.assertEqual(len(result["recommendations"]), 1)
         self.assertEqual(result["recommendations"][0]["release_id"], 3)
         self.assertGreater(result["recommendations"][0]["score"], 0)
+
+    @staticmethod
+    def release_error(status):
+        response = httpx.Response(status, request=httpx.Request("GET", "https://api.discogs.com/releases/3"))
+        return httpx.HTTPStatusError("Release lookup failed", request=response.request, response=response)
+
+    def test_unavailable_candidates_and_wants_do_not_stop_stream_or_retry_copies(self):
+        self.inventory["pagination"]["pages"] = 2
+        for release_id in (4, 5):
+            self.releases[release_id] = Release(
+                release_id, f"Release {release_id}", artists=["Artist"], styles=["House"],
+            )
+            self.inventory["listings"].append({
+                **self.inventory["listings"][-1], "id": 100 + release_id,
+                "release": {"id": release_id, "artist": "Artist"},
+            })
+        for status in (404, 410):
+            with self.subTest(status=status):
+                def fetch(release_id, **kwargs):
+                    if release_id in (2, 3):
+                        raise self.release_error(status)
+                    return self.releases[release_id]
+
+                with patch.object(service, "get_wantlist_ids", return_value=[2, 5]), \
+                     patch.object(service, "link_listing", inventory_service.link_listing), \
+                     patch.object(inventory_service, "_release_cache", ReleaseCache(100, 60)), \
+                     patch.object(inventory_service, "get_release", side_effect=fetch) as lookup:
+                    events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+                self.assertFalse(any(event["type"] == "error" for event in events))
+                self.assertEqual([event["recommendation"]["release_id"] for event in events
+                                  if event["type"] == "recommendation"], [4])
+                self.assertEqual([event["recommendation"]["release_id"] for event in events
+                                  if event["type"] == "wantlist"], [5])
+                self.assertEqual(events[-1]["type"], "done")
+                self.assertEqual(events[-1]["recommendations"], 1)
+                self.assertEqual(events[-1]["wantlist_matches"], 1)
+                self.assertFalse(events[-1]["has_more"])
+                self.assertEqual([call.args[0] for call in lookup.call_args_list], [3, 4, 2, 5])
+
+    def test_unavailable_regular_candidate_does_not_block_later_results(self):
+        self.releases[4] = Release(4, "Available", artists=["Artist"], styles=["House"])
+        self.inventory["listings"].append({
+            **self.inventory["listings"][-1], "id": 15,
+            "release": {"id": 4, "artist": "Artist"},
+        })
+        for status in (404, 410):
+            with self.subTest(status=status):
+                def fetch(release_id, **kwargs):
+                    if release_id == 3:
+                        raise self.release_error(status)
+                    return self.releases[release_id]
+
+                with patch.object(service, "link_inventory", inventory_service.link_inventory), \
+                     patch.object(inventory_service, "_release_cache", ReleaseCache(100, 60)), \
+                     patch.object(inventory_service, "get_release", side_effect=fetch):
+                    result = service.recommend("user", "seller")
+                self.assertEqual([item["release_id"] for item in result["recommendations"]], [4])
+
+    def test_unavailable_candidates_do_not_expand_lookup_budget(self):
+        self.inventory["pagination"]["pages"] = 2
+        self.inventory["listings"] = [{
+            **self.inventory["listings"][-1], "id": 1000 + release_id,
+            "release": {"id": release_id, "artist": "Artist"},
+        } for release_id in range(100, 140)]
+        with patch.object(service, "link_listing", inventory_service.link_listing), \
+             patch.object(inventory_service, "_release_cache", ReleaseCache(100, 60)), \
+             patch.object(inventory_service, "get_release", side_effect=self.release_error(404)) as lookup:
+            events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+        self.assertEqual(lookup.call_count, service.FULL_SCORE_LIMIT)
+        self.assertEqual(len({call.args[0] for call in lookup.call_args_list}), service.FULL_SCORE_LIMIT)
+        self.assertEqual(events[-1]["type"], "done")
+        self.assertEqual(events[-1]["recommendations"], 0)
+        self.assertTrue(events[-1]["has_more"])
+
+    def test_other_release_failures_still_end_search_with_error(self):
+        for error in ([self.release_error(status) for status in (401, 403, 429, 500, 503)] +
+                      [httpx.ReadTimeout("Timed out")]):
+            with self.subTest(error=error):
+                with patch.object(service, "link_listing", inventory_service.link_listing), \
+                     patch.object(service, "link_inventory", inventory_service.link_inventory), \
+                     patch.object(inventory_service, "_release_cache", ReleaseCache(100, 60)), \
+                     patch.object(inventory_service, "get_release", side_effect=error):
+                    events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+                    self.assertEqual(events[-1]["type"], "error")
+                    with self.assertRaises(type(error)):
+                        service.recommend("user", "seller")
+
+    def test_inventory_404_and_410_are_not_skipped(self):
+        for status in (404, 410):
+            with self.subTest(status=status), patch.object(
+                service, "get_inventory_raw", side_effect=self.release_error(status)
+            ):
+                events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
+                self.assertEqual(events[-1]["type"], "error")
+                with self.assertRaises(httpx.HTTPStatusError):
+                    service.recommend("user", "seller")
 
     def test_initial_and_more_search_use_25_top_ranks_and_5_exploration_releases(self):
         for release_id in range(4, 103):
