@@ -42,7 +42,7 @@ From the project folder:
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-npm install --prefix frontend
+npm ci --prefix frontend
 ```
 Discogs application token:
 
@@ -63,23 +63,11 @@ Vite proxies API and authentication requests to the backend. Use `localhost:5173
 Press **Ctrl+C** to stop both servers. Later starts use `.venv` automatically.
 Restart the servers after changing configuration.
 
-### Try the vanilla frontend locally
-
-Keep `./run.sh` running, then open a second terminal:
-
-```sh
-npm run dev --prefix frontend-vanilla
-```
-
-Compare the HTML/CSS/vanilla JavaScript experiment at `http://localhost:5174`
-with React at `http://localhost:5173`. After Discogs login returns to React,
-return to port 5174 and refresh the connection. Both use the same backend and
-share the login cookie. See [the experiment guide](frontend-vanilla/README.md)
-for the development proxy, shared API code, and checks.
+The standalone frontend lives in `frontend/`. See [the frontend guide](frontend/README.md) for its code, tests, and player behavior.
 
 ### Serve the built frontend with FastAPI
 
-Frontend serving is optional and disabled by default. After building React, enable it to serve the website and API from the same address without Vite:
+Frontend serving is optional and disabled by default. After building the frontend, enable it to serve the website and API from the same address without Vite:
 
 ```sh
 npm run build --prefix frontend
@@ -90,8 +78,7 @@ Open `http://localhost:8000`. The default Discogs callback becomes
 `http://localhost:8000/auth/discogs/callback`; if you explicitly set
 `DISCOGS_CALLBACK_URL`, update it to match. For hosting, set `FRONTEND_URL` to
 the public HTTPS origin. Authentication and API routes keep their existing paths.
-Enabling serving without `frontend/dist/index.html` fails at startup with a build
-instruction. Rebuild React after frontend changes.
+Enabling serving without `frontend/dist/index.html` fails at startup with a build instruction.
 
 `run-production.sh` enables frontend serving and starts one Uvicorn worker
 without development reload. It checks for the Python environment and frontend
@@ -102,7 +89,7 @@ these URL settings. Press **Ctrl+C** to stop the server.
 
 ## Stack
 
-- **Frontend:** React, TypeScript, Vite, and TanStack Query.
+- **Frontend:** HTML, CSS, vanilla JavaScript, TypeScript API/session modules, and Vite.
 - **Backend:** Python, FastAPI, Pydantic, and Uvicorn; HTTPX for Discogs requests.
 - **Authentication:** Discogs OAuth via OAuthlib, encrypted credentials via Cryptography.
 - **Storage:** SQLite for sessions and response caches, plus a bounded in-memory release cache.
@@ -163,7 +150,7 @@ Steps towards deployment:
 
 ## What’s next
 
-**Hosted prototype:** The proposed setup is a React static site and FastAPI service on Render, with Turso for persistent storage. Deployment is still planned.
+**Hosted prototype:** The proposed setup is one FastAPI service serving the built vanilla frontend, with Turso for persistent storage. Deployment is still planned.
 
 **Style pre-ranking:** Start with artist/label style frequencies, then test one-vs-rest logistic regression using artist, label, and year. Compare predicted styles with the user's collection profile to help select promising records before fetching full metadata. Evaluate offline under the existing 30-release enrichment budget, retaining five exploration slots and actual Discogs styles for final scoring. This is proposed; no model has been trained or integrated. See the [style pre-ranking proposal](docs/style-pre-ranking.md).
 

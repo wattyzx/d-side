@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { QueryClient } from "@tanstack/react-query";
-import { accountQueryKey, bindSessionToQueryClient, createSession, session } from "../src/session.ts";
+import { createSession, session } from "../src/session.ts";
 import { getAccount, logout } from "../src/api/auth.ts";
 import { addToWantlist, getRecommendations } from "../src/api/recommendations.ts";
 import { SessionChangedError, SessionExpiredError } from "../src/api/http.ts";
@@ -44,22 +43,16 @@ test("ordinary server failures preserve the account and do not expire its sessio
   assert.equal(signal.aborted, false);
 });
 
-test("expiry clears the query cache and prevents a delayed identity response restoring it", async (t) => {
-  const client = new QueryClient();
-  t.after(() => client.clear());
-  t.after(bindSessionToQueryClient(client));
-  client.setQueryData(accountQueryKey, { authenticated: true, username: "Alice" });
+test("expiry prevents a delayed identity response restoring the session", async (t) => {
   session.signIn();
   let resolveIdentity;
   t.mock.method(globalThis, "fetch", (url) => url === "/auth/me"
     ? new Promise((resolve) => { resolveIdentity = resolve; })
     : Promise.resolve(new Response(null, { status: 401 })));
-  const pending = client.fetchQuery({ queryKey: accountQueryKey, queryFn: getAccount, retry: false }).catch(() => null);
+  const pending = getAccount();
   await assert.rejects(addToWantlist(123), SessionExpiredError);
-  assert.equal(client.getQueryData(accountQueryKey), null);
   resolveIdentity(new Response('{"authenticated":true,"username":"Alice"}'));
-  await pending;
-  assert.equal(client.getQueryData(accountQueryKey), null);
+  assert.equal(await pending, null);
   assert.equal(session.getSnapshot().expired, true);
 });
 
@@ -98,11 +91,7 @@ test("stream events received after expiry are discarded and the reader is cancel
   assert.equal(cancelled, true);
 });
 
-test("logout clears cached identity and pending requests without an expiry prompt", async (t) => {
-  const client = new QueryClient();
-  t.after(() => client.clear());
-  t.after(bindSessionToQueryClient(client));
-  client.setQueryData(accountQueryKey, { authenticated: true, username: "Alice" });
+test("logout ends the session and pending requests without an expiry prompt", async (t) => {
   session.signIn();
   let resolveSave;
   t.mock.method(globalThis, "fetch", (url) => url === "/wantlist"
@@ -111,7 +100,6 @@ test("logout clears cached identity and pending requests without an expiry promp
   const pending = addToWantlist(123);
   const rejected = assert.rejects(pending, SessionChangedError);
   await logout();
-  assert.equal(client.getQueryData(accountQueryKey), null);
   assert.equal(session.getSnapshot().expired, false);
   resolveSave(new Response('{"added":true}'));
   await rejected;

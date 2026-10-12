@@ -1,75 +1,53 @@
-# React + TypeScript + Vite
+# D(e)Side frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The standalone frontend uses HTML, CSS, and DOM JavaScript. Its API and session
+modules are TypeScript, transpiled by Vite. No React or TanStack dependency is
+needed. Login, streamed results, cancellation, Search more, and wantlist saves
+use the same FastAPI backend.
 
-Currently, two official plugins are available:
+From the project root:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm ci --prefix frontend
+./run.sh
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Open **http://localhost:5173**. Vite proxies `/auth`, `/recommend`, and `/wantlist`
+to FastAPI. OAuth returns directly to this frontend. Use `localhost` consistently;
+there is no development Origin rewrite. The default backend settings already
+trust this address.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+For production serving:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```sh
+npm run build --prefix frontend
+FRONTEND_URL=http://localhost:8000 ./run-production.sh
 ```
+
+FastAPI serves `frontend/dist` and the API from the same origin. Set the
+public HTTPS `FRONTEND_URL` when hosting and update any explicit OAuth callback
+URL to match. Rebuild after frontend changes.
+
+## Results and previews
+
+Results use three tabs: Recommendations, Wantlist, and On demand. On demand
+ranks up to 30 distinct releases from the scanned inventory using the backend's
+community demand score, excluding owned and wantlisted records. It needs no
+additional full-release requests. Covers and styles may be unavailable there.
+
+Recommendations and wantlist matches can include YouTube videos. Click a
+playable cover to open the preview player; previews require an available,
+embeddable video. Inventory-only demand records have no videos.
+
+## Checks
+
+```sh
+npm test --prefix frontend
+npm run build --prefix frontend
+npm run lint --prefix frontend
+```
+
+Tests cover authentication, session changes, streaming, cancellation, saves,
+and player behavior. The build type-checks the TypeScript modules before Vite
+bundles the frontend. Manually verify login, progressive results, cancellation,
+Search more, saves, logout, previews, and the layout on a narrow screen.

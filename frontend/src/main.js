@@ -1,7 +1,7 @@
-// These modules contain no React runtime code. Both frontends share the API contract.
-import { getAccount, logout, discogsLoginUrl } from '../../frontend/src/api/auth.ts';
-import { getRecommendations, cancelSearch, addToWantlist, sortRecommendations } from '../../frontend/src/api/recommendations.ts';
-import { session } from '../../frontend/src/session.ts';
+// API and session modules are bundled by Vite alongside the vanilla UI.
+import { getAccount, logout, discogsLoginUrl } from './api/auth.ts';
+import { getRecommendations, cancelSearch, addToWantlist, sortRecommendations } from './api/recommendations.ts';
+import { session } from './session.ts';
 import { createReleasePlayer, playableVideos } from './player.js';
 
 const previewPlayer = createReleasePlayer();
@@ -72,7 +72,6 @@ function demandText(record) {
   if (!Number.isFinite(want) || !Number.isFinite(have) || want < 0 || have < 0) {
     return 'W/H —';
   }
-  const ratio = have > 0 ? (want / have).toFixed(1) : want > 0 ? '∞' : 'N/A';
   return `W/H ${want.toFixed(0)}/${have.toFixed(0)}`;
 }
 
@@ -233,7 +232,7 @@ async function checkAccount() {
   try {
     state.account = await getAccount();
     elements['account-error'].textContent = authError ? loginErrors[authError] ?? loginErrors.provider : '';
-    status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search. After login, open this tab and refresh your connection.');
+    status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
   } catch (error) { elements['account-error'].textContent = error.message; }
   finally { state.checking = false; render(); }
 }

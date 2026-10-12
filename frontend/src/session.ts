@@ -1,7 +1,3 @@
-import type { QueryClient } from "@tanstack/react-query";
-
-export const accountQueryKey = ["account"] as const;
-
 type SessionSnapshot = { revision: number; expired: boolean };
 
 export function createSession() {
@@ -49,11 +45,3 @@ export function createSession() {
 
 export const session = createSession();
 
-export function bindSessionToQueryClient(client: Pick<QueryClient, "cancelQueries" | "setQueryData">) {
-  return session.onEnd(() => {
-    // Cancel identity refreshes before clearing the cache so an old response
-    // cannot restore an account after its session has ended.
-    void client.cancelQueries({ queryKey: accountQueryKey });
-    client.setQueryData(accountQueryKey, null);
-  });
-}

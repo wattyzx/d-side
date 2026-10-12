@@ -39,7 +39,7 @@ function fixture({ delayedApi = false } = {}) {
     pauseVideo() { this.events.onStateChange({ data: 2 }); }
     stopVideo() { this.stopped = true; }
   } };
-  const window = { location: { origin: 'http://localhost:5174' },
+  const window = { location: { origin: 'http://localhost:5173' },
     setTimeout() { return 1; }, clearTimeout() {},
     ...(delayedApi ? {} : { YT: api }),
   };
