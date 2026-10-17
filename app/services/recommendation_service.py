@@ -1,5 +1,7 @@
 import json
+import logging
 from math import ceil, isfinite
+from app.search_errors import search_error_message
 
 from app.services.discogs_client import (
     get_collection,
@@ -521,9 +523,9 @@ def recommend_stream(
     except SearchCancelled:
         raise
     except Exception as exc:
-
+        logging.getLogger(__name__).exception("Recommendation stream failed")
         yield _stream_event(
             "error",
             error_type=type(exc).__name__,
-            message=str(exc),
+            message=search_error_message(exc),
         )

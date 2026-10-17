@@ -1,5 +1,13 @@
 import { session } from "../session.ts";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 export class SessionExpiredError extends Error {
   constructor() {
     super("Your session expired. Connect with Discogs again.");
@@ -49,9 +57,9 @@ export async function apiFetch(
     const validationMessage = Array.isArray(body?.detail)
       ? body.detail.find((item: { msg?: unknown }) => typeof item?.msg === "string")?.msg
       : undefined;
-    throw new Error(typeof body?.detail === "string" ? body.detail
+    throw new ApiError(typeof body?.detail === "string" ? body.detail
       : typeof validationMessage === "string" ? validationMessage.replace(/^Value error, /, "")
-      : fallback);
+      : fallback, response.status);
   }
   return response;
 }

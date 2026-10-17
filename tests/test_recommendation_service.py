@@ -350,10 +350,12 @@ class RecommendationServiceTests(unittest.TestCase):
                             for i in range(len(results)-1)))
 
     def test_stream_reports_upstream_errors(self):
-        with patch.object(service, "get_collection", side_effect=ValueError("No collection")):
+        with patch.object(service, "get_collection", side_effect=ValueError("internal diagnostic")), \
+                self.assertLogs(service.__name__, level="ERROR"):
             events = [json.loads(line) for line in service.recommend_stream("user", "seller")]
         self.assertEqual(events[-1]["type"], "error")
-        self.assertEqual(events[-1]["message"], "No collection")
+        self.assertIn("Please try again", events[-1]["message"])
+        self.assertNotIn("internal diagnostic", events[-1]["message"])
 
     def test_stream_scores_each_candidate_before_loading_the_next(self):
         self.releases[4] = Release(

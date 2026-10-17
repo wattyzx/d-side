@@ -4,6 +4,8 @@ import { getRecommendations, cancelSearch, addToWantlist, sortRecommendations } 
 import { session } from './session.ts';
 import { createReleasePlayer, playableVideos } from './player.js';
 import { createSearchStorage } from './search-storage.js';
+import { errorMessage } from './error-message.js';
+import { ApiError } from './api/http.ts';
 
 // Accessing sessionStorage itself can throw in restricted browser contexts.
 let browserStorage;
@@ -13,6 +15,7 @@ let restoredSearch = false;
 let leavingPage = false;
 let searchViewRevision = 0;
 let returningHome = false;
+let currentFavicon = '/crate_empty.jpg';
 
 const previewPlayer = createReleasePlayer();
 
@@ -48,7 +51,11 @@ function link(text, href, external = false) {
   return value;
 }
 function busy() { return !!state.active || state.cancelling || state.saving; }
-function status(text) { elements.status.textContent = text; }
+function status(text) {
+  const idlePrompt = text === 'Enter a seller and start digging';
+  elements['digging-prompt'].hidden = !idlePrompt;
+  elements.status.textContent = idlePrompt ? '' : text;
+}
 
 function persistSearch() {
   if (leavingPage || !state.account || !state.searched) return;
@@ -115,7 +122,7 @@ function renderAccount() {
       state.saving = true;
       render();
       try { await logout(); status('Signed out. Connect with Discogs to search.'); }
-      catch (error) { elements['account-error'].textContent = error.message; }
+      catch (error) { elements['account-error'].textContent = errorMessage(error); }
       finally { state.saving = false; render(); }
     };
     container.append(button);
@@ -132,9 +139,9 @@ function demandText(record) {
   const want = record.community_want;
   const have = record.community_have;
   if (!Number.isFinite(want) || !Number.isFinite(have) || want < 0 || have < 0) {
-    return 'W/H —';
+    return '—';
   }
-  return `W/H ${want.toFixed(0)}/${have.toFixed(0)}`;
+  return `${want.toFixed(0)}/${have.toFixed(0)}`;
 }
 
 function shortCondition(condition) {
@@ -197,28 +204,45 @@ function recordRow(record, recommend, demandRanked = false, rank) {
   const price = node('span', formatPrice(record.price, record.currency), 'price');
   price.title = record.currency;
   heading.append(release, price);
-  details.append(heading, node('p', [record.labels.join(', '), record.year, record.styles.join(', '),
-    shortCondition(record.condition)].filter(Boolean).join(' · '), 'metadata'));
+  const separator = () => {
+    const dot = node('span', '·', 'record-separator');
+    dot.setAttribute('aria-hidden', 'true');
+    return dot;
+  };
+  const metadata = node('p', undefined, 'metadata');
+  [['labels', record.labels.join(', ')], ['year', record.year],
+    ['styles', record.styles.join(', ')], ['condition', shortCondition(record.condition)]]
+    .filter(([, value]) => value).forEach(([category, value], index) => {
+      if (index) metadata.append(separator());
+      const group = node('span', String(value), `metadata-group metadata-${category}`);
+      group.title = String(value);
+      metadata.append(group);
+    });
+  details.append(heading, metadata);
   const links = node('div', undefined, 'links');
   const demand = node('span', demandText(record), 'demand');
   if (Number.isFinite(record.community_want) && Number.isFinite(record.community_have)) {
     demand.title = `${record.community_want} want / ${record.community_have} have`;
-    demand.setAttribute('aria-label', `${demand.textContent}; ${demand.title}`);
+    demand.setAttribute('aria-label', demand.title);
   }
   links.append(demand);
   const buy = link('🛒 ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
   buy.title = 'Open this listing to add it to your cart on Discogs';
   buy.setAttribute('aria-label', `Buy ${title} on Discogs (opens a new tab)`);
-  links.append(buy);
+  if (recommend) {
+    links.append(separator(), node('span', demandRanked
+      ? `Demand ${record.demand_score.toFixed(2)}` : record.score.toFixed(2)));
+  }
+  const purchaseActions = node('span', undefined, 'purchase-actions');
+  purchaseActions.append(buy);
+  links.append(separator(), purchaseActions);
   if (recommend) {
     const button = node('button', '+ Wantlist');
     button.type = 'button';
     button.disabled = busy() || !state.account;
     button.setAttribute('aria-label', `Add ${title} to wantlist`);
     button.onclick = () => saveRecord(record);
-    links.append(node('span', demandRanked
-      ? `Demand ${record.demand_score.toFixed(2)}` : `Score ${record.score.toFixed(2)}`));
-    links.append(button);
+    purchaseActions.append(separator(), button);
     const explanation = node('details', undefined, 'match-details');
     explanation.hidden = true;
     explanation.open = state.expanded.has(record.release_id);
@@ -258,6 +282,12 @@ function render() {
   elements.cancel.disabled = state.cancelling;
   elements.cancel.textContent = state.cancelling ? 'Cancelling…' : 'Cancel search';
   const visible = sortRecommendations(state.records).filter(record => record.score > 0.1);
+  const favicon = state.account && (visible.length || state.wants.length || state.demands.length)
+    ? '/crate_full.jpg' : '/crate_empty.jpg';
+  if (favicon !== currentFavicon) {
+    elements.favicon.href = favicon;
+    currentFavicon = favicon;
+  }
   const wanted = new Set(state.wants.map(record => record.release_id));
   const demandRecords = state.demands.filter(record => !wanted.has(record.release_id))
     .sort((a, b) => b.demand_score - a.demand_score || a.release_id - b.release_id);
@@ -303,14 +333,14 @@ async function checkAccount() {
   try {
     state.account = await getAccount();
     elements['account-error'].textContent = authError ? loginErrors[authError] ?? loginErrors.provider : '';
-    status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+    status(state.account ? 'Enter a seller and start digging' : 'Connect with Discogs to search.');
     if (!state.account) searchStorage.clear();
     else if (!restoredSearch) {
       restoredSearch = true;
       state.checking = false;
       await restoreSearch();
     }
-  } catch (error) { elements['account-error'].textContent = error.message; }
+  } catch (error) { elements['account-error'].textContent = errorMessage(error); }
   finally { state.checking = false; render(); }
 }
 
@@ -325,7 +355,7 @@ async function restoreSearch() {
   elements['min-price'].value = saved.priceRange.minPrice ?? '';
   elements['max-price'].value = saved.priceRange.maxPrice ?? '';
   elements.notice.textContent = saved.notice ?? '';
-  elements.error.textContent = saved.error ?? '';
+  elements.error.textContent = saved.error ? errorMessage(saved.error) : '';
   status(saved.status ?? 'Previous results restored.');
   if (!saved.activeId) return;
   const revision = session.getSnapshot().revision;
@@ -343,7 +373,7 @@ async function restoreSearch() {
     await search(true);
   } catch (error) {
     if (leavingPage || searchViewRevision !== viewRevision || session.getSnapshot().revision !== revision) return;
-    elements.error.textContent = error.message;
+    elements.error.textContent = errorMessage(error);
     status('Results restored. Use Search more to try continuing.');
   } finally {
     if (!leavingPage && searchViewRevision === viewRevision && session.getSnapshot().revision === revision) {
@@ -384,7 +414,7 @@ function handleEvent(event) {
       break;
     case 'error':
       if (state.active) state.active.done = true;
-      elements.error.textContent = event.message ?? 'Search failed.';
+      elements.error.textContent = errorMessage(event.message);
       break;
   }
   render();
@@ -422,8 +452,10 @@ async function search(more = false) {
     });
   } catch (error) {
     if (!leavingPage && !request.controller.signal.aborted && state.active === request) {
-      elements.error.textContent = error.message;
-      status('Stopped before completion. Search more to continue.');
+      elements.error.textContent = errorMessage(error);
+      status(error instanceof ApiError && error.status === 422
+        ? 'Check the seller and price fields, then choose Find records.'
+        : 'Stopped before completion. Search more to continue.');
     }
   } finally {
     if (!leavingPage) {
@@ -479,15 +511,15 @@ elements.home.onclick = async event => {
   elements.error.textContent = '';
   elements['recovery-warning'].hidden = true;
   status(searchId ? 'Stopping search…' : state.account
-    ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+    ? 'Enter a seller and start digging' : 'Connect with Discogs to search.');
   render();
   try {
     if (searchId) await cancelSearch(searchId);
     if (session.getSnapshot().revision === revision) {
-      status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+      status(state.account ? 'Enter a seller and start digging' : 'Connect with Discogs to search.');
     }
   } catch (error) {
-    if (session.getSnapshot().revision === revision) elements.error.textContent = error.message;
+    if (session.getSnapshot().revision === revision) elements.error.textContent = errorMessage(error);
   } finally {
     returningHome = false;
     if (session.getSnapshot().revision === revision) state.cancelling = false;
@@ -507,7 +539,7 @@ elements.cancel.onclick = async () => {
     await cancelSearch(request.id);
     if (state.active === request) status('Search cancelled. Search more to continue.');
   } catch (error) {
-    if (state.active === request) { elements.error.textContent = error.message; status('Could not confirm cancellation. Wait a moment before searching again.'); }
+    if (state.active === request) { elements.error.textContent = errorMessage(error); status('Could not confirm cancellation. Wait a moment before searching again.'); }
   } finally {
     if (state.active === request) { state.cancelling = false; state.active = null; }
     render();
@@ -529,7 +561,7 @@ async function saveRecord(record) {
     state.records = state.records.filter(item => item.release_id !== record.release_id);
     status('Added to your wantlist.');
   } catch (error) {
-    if (searchViewRevision === viewRevision && session.getSnapshot().revision === revision) elements.error.textContent = error.message;
+    if (searchViewRevision === viewRevision && session.getSnapshot().revision === revision) elements.error.textContent = errorMessage(error);
   } finally {
     if (searchViewRevision === viewRevision) { state.saving = false; render(); persistSearch(); }
   }

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>D-Side — Decide what to dig</title>
+    <link id="favicon" rel="icon" type="image/jpeg" href="/crate_empty.jpg">
     <link rel="stylesheet" href="/src/style.css">
   </head>
   <body>
@@ -14,31 +15,31 @@
           <span class="brand-subtitle">Decide what to dig</span>
         </a>
         <form id="search-form">
-          <input id="seller" name="seller" aria-label="Discogs seller username or shop URL" placeholder="Seller name or Discogs shop URL" required maxlength="2048" autocomplete="off">
+          <input id="seller" name="seller" aria-label="Discogs seller username or shop URL" placeholder="Name or Discogs URL" required maxlength="2048" autocomplete="off">
           <button id="search" disabled>Find records</button>
           <button id="cancel" type="button" hidden>Cancel search</button>
         </form>
         <div class="sleeve-account">
-          <span class="sticker-caption">Your Discogs account</span>
           <div id="account" aria-label="Discogs account"></div>
         </div>
       </header>
-      <div class="content">
-        <div class="price-filters">
-          <label for="min-price">Min price
-            <input id="min-price" form="search-form" type="number" min="0" step="any" placeholder="No minimum" aria-describedby="price-help">
+      <div class="content filter-panel">
+        <div class="price-filters" role="group" aria-labelledby="price-range-label">
+          <span id="price-range-label">Price range</span>
+          <label for="min-price">
+            <input id="min-price" form="search-form" type="number" min="0" step="any" placeholder="Min." aria-label="Minimum price">
           </label>
-          <label for="max-price">Max price
-            <input id="max-price" form="search-form" type="number" min="0" step="any" placeholder="No maximum" aria-describedby="price-help">
+          <label for="max-price">
+            <input id="max-price" form="search-form" type="number" min="0" step="any" placeholder="Max." aria-label="Maximum price">
           </label>
-          <p id="price-help">Listing prices in the seller’s currency, excluding shipping. Choose a range before searching.</p>
         </div>
         <p id="account-error" class="error" role="alert"></p>
         <p id="status" role="status" aria-live="polite">Checking your connection…</p>
         <p id="notice"></p>
         <p id="recovery-warning" class="error" role="status" hidden>Browser storage is unavailable or full. Results cannot be restored after refreshing this page.</p>
         <p id="error" class="error" role="alert"></p>
-        <div id="results-layout" class="results-layout" hidden>
+      </div>
+      <div id="results-layout" class="content results-layout" hidden>
           <div class="result-tabs" role="tablist" aria-label="Records">
             <button id="recommendations-tab" type="button" role="tab" aria-controls="results-section" aria-selected="true">Recommendations <span id="results-count">(0)</span></button>
             <button id="wantlist-tab" type="button" role="tab" aria-controls="wantlist-section" aria-selected="false" tabindex="-1">Wantlist <span id="wantlist-count">(0)</span></button>
@@ -58,8 +59,8 @@
             <ol id="demand-results"></ol>
             <p id="demand-empty" class="empty-message">No records with demand found so far.</p>
           </section>
-        </div>
       </div>
+      <p id="digging-prompt" hidden>Enter a seller and start digging.</p>
       <noscript>This frontend needs JavaScript for login status and streamed recommendations.</noscript>
     </main>
     <div id="player-video" class="player-video" hidden>

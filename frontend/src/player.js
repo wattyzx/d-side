@@ -31,6 +31,12 @@ export function createReleasePlayer({ document = globalThis.document, window = g
   const toggle = element('player-toggle');
   const next = element('player-next');
   const message = element('player-message');
+  // Wrapped titles change the mobile dock height. Keep the video above it.
+  if (window.ResizeObserver) {
+    new window.ResizeObserver(() => {
+      document.documentElement.style.setProperty('--player-bar-height', `${bar.getBoundingClientRect().height}px`);
+    }).observe(bar);
+  }
   let current = null;
   let youtube = null;
   let ready = false;
