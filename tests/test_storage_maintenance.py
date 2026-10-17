@@ -15,6 +15,7 @@ from app.models.release import Release
 from app.services.auth_store import AuthStore
 from app.services.cache_service import SQLiteCache
 from app.services.maintenance import clear_expired
+from app.services.database import DatabaseError
 from app.services.release_cache import ReleaseCache
 
 
@@ -73,6 +74,14 @@ class StorageMaintenanceTests(unittest.TestCase):
         healthy = Mock()
         with self.assertLogs("app.services.maintenance", level="ERROR"):
             clear_expired(busy, healthy)
+        healthy.clear_expired.assert_called_once()
+
+    def test_remote_cleanup_failure_does_not_skip_other_stores(self):
+        unavailable = Mock()
+        unavailable.clear_expired.side_effect = DatabaseError("Database request failed.")
+        healthy = Mock()
+        with self.assertLogs("app.services.maintenance", level="ERROR"):
+            clear_expired(unavailable, healthy)
         healthy.clear_expired.assert_called_once()
 
     def test_startup_and_periodic_cleanup_follow_app_lifetime(self):

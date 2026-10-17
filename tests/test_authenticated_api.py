@@ -17,6 +17,7 @@ from app.api import app
 from app.auth import AuthServices, get_auth_services
 from app.services.auth_store import AuthStore
 from app.services.cache_service import SQLiteCache
+from app.services.database import DatabaseError
 from app.services.discogs_oauth import DiscogsOAuth
 from app.services.discogs_session import current_credentials, discogs_session, DiscogsCredentials
 from app.services import discogs_client
@@ -46,6 +47,14 @@ class AuthenticatedAPITests(unittest.TestCase):
     def credentials(self, username):
         return DiscogsCredentials(username, username + "-token", username + "-secret", "consumer", "secret")
 
+    def test_database_failure_returns_service_unavailable_without_losing_session(self):
+        client = self.client("Alice")
+        with patch.object(self.store, "read", side_effect=DatabaseError("Database request failed. Please try again.")):
+            response = client.get("/auth/me")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "Database request failed. Please try again.")
+        self.assertEqual(client.get("/auth/me").status_code, 200)
+
     def test_price_range_is_validated_before_search_and_forwarded_to_both_endpoints(self):
         client = self.client("Alice")
         for endpoint in ("/recommend", "/recommend/stream"):
@@ -58,11 +67,15 @@ class AuthenticatedAPITests(unittest.TestCase):
             response = client.post("/recommend", json={"seller": "shop", "min_price": 0, "max_price": 20})
             self.assertEqual(response.status_code, 200)
             recommend.assert_called_once_with(username="Alice", seller="shop", min_price=0, max_price=20)
-        with patch("app.api.recommend_stream", return_value=iter(['{"type":"done"}\n'])) as stream:
+        def records(**kwargs):
+            yield '{"type":"done"}\n'
+
+        with patch("app.api.recommend_stream", side_effect=records) as stream:
             response = client.post("/recommend/stream", json={
                 "seller": "shop", "min_price": 10, "max_price": 20, "exclude_release_ids": [3],
             })
             self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.text, '{"type":"done"}\n')
             stream.assert_called_once_with(username="Alice", seller="shop", exclude_release_ids=[3],
                                            min_price=10, max_price=20)
 

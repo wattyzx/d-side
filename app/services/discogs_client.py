@@ -1,6 +1,7 @@
 from app.config import get_settings
 from app.services.search_control import check_cancelled
 from app.services.cache_service import SQLiteCache
+from app.services.database import configured_database
 from app.services.discogs_http import get_json, put_json
 from app.services.discogs_session import current_credentials, personal_namespace
 from urllib.parse import quote
@@ -11,7 +12,9 @@ from app.services.release_mapper import (
 )
 from app.models.release import Release
 
-cache = SQLiteCache(get_settings().cache_db_path)
+_settings = get_settings()
+cache = SQLiteCache(_settings.cache_db_path,
+                    database=configured_database(_settings, _settings.cache_db_path))
 DEFAULT_PER_PAGE = 100
 
 def get_release_raw(release_id: int, *, min_interval: float = 1.1) -> dict:

@@ -5,6 +5,8 @@ import anyio
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from app.services.database import DatabaseError
 from pydantic import BaseModel, Field, model_validator
 
 from app.config import PROJECT_ROOT, get_settings, load_environment
@@ -50,6 +52,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.include_router(auth_router)
+
+
+@app.exception_handler(DatabaseError)
+async def database_unavailable(request, exc):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
 app.add_middleware(
@@ -119,6 +126,8 @@ async def recommend_endpoint(
                                                   **request.price_options()))
     except SearchCancelled:
         raise HTTPException(499, "Search cancelled.") from None
+    except DatabaseError:
+        raise
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except Exception as exc:

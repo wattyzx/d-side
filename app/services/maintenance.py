@@ -5,6 +5,7 @@ import sqlite3
 
 import anyio
 from starlette.concurrency import run_in_threadpool
+from app.services.database import DatabaseError
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ def clear_expired(*stores):
             continue
         try:
             store.clear_expired()
-        except sqlite3.Error:
+        except (sqlite3.Error, DatabaseError):
             # A temporarily busy database must not stop future cleanup runs.
             logger.exception("Could not remove expired records")
 

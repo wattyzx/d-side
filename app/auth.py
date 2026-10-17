@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.config import ConfigurationError, Settings, get_settings
 from app.services.auth_store import AuthStore
+from app.services.database import configured_database
 from app.services.discogs_oauth import DiscogsOAuth
 from app.services.discogs_session import DiscogsCredentials
 
@@ -31,7 +32,8 @@ def get_auth_services() -> AuthServices:
         settings.require_auth_configuration()
     except ConfigurationError as exc:
         raise HTTPException(503, str(exc)) from None
-    store = AuthStore(settings.auth_db_path, settings.auth_encryption_key)
+    store = AuthStore(settings.auth_db_path, settings.auth_encryption_key,
+                      database=configured_database(settings, settings.auth_db_path, private=True))
     oauth = DiscogsOAuth(settings.discogs_consumer_key, settings.discogs_consumer_secret)
     return AuthServices(oauth, store, settings)
 

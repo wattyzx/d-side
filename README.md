@@ -25,7 +25,7 @@ Results arrive during the search. **Search more** scores another batch of unseen
 - **Less repeated work:** Taste lookups and listing scores are reused during scans. Discogs responses and release metadata are cached, and expired storage is cleaned regularly.
 - **Shared rate limits:** Requests are paced across accounts, and retries respect upstream cooldowns. Rate-limit feedback is retained even when a request’s search is cancelled.
 - **Account isolation:** Personal caches are separated by account; public release metadata can be shared. Wantlist saves invalidate cached data atomically, preventing older in-flight fetches from restoring stale responses.
-- **Persistent login:** OAuth credentials stay encrypted in SQLite; the browser receives an HttpOnly session cookie. Pending logins expire after ten minutes, sessions after seven days, and signing out deletes the local session and credentials.
+- **Persistent login:** OAuth credentials stay encrypted in the configured database; the browser receives an HttpOnly session cookie. Pending logins expire after ten minutes, sessions after seven days, and signing out deletes the stored session and credentials.
 
 ## Run locally
 
@@ -81,24 +81,57 @@ environment variables when needed. Set `FRONTEND_URL` and any explicit
 `DISCOGS_CALLBACK_URL` in the environment or `.env`; the script does not replace
 these URL settings. Press **Ctrl+C** to stop the server.
 
+### Storage: SQLite or Turso
+
+SQLite remains the default. To use the Turso **libSQL** database, add its
+credentials to `.env`:
+
+```env
+TURSO_DATABASE_URL=libsql://your-database.turso.io
+TURSO_AUTH_TOKEN=your_database_token
+```
+
+Keep the existing `AUTH_ENCRYPTION_KEY` stable across restarts and deployments.
+The backend uses Turso's [SQL-over-HTTP API](https://docs.turso.tech/sdk/http/reference)
+through the existing HTTPX dependency. No additional package is required.
+
+First check the connection and storage behavior:
+
+```sh
+STORAGE_BACKEND=turso .venv/bin/python -m app.check_storage
+```
+
+After the check passes, add `STORAGE_BACKEND=turso` to `.env` and restart the
+app. Sessions and caches then use Turso. Local SQLite files are retained but
+are not uploaded; log in again and let the caches rebuild. Set
+`STORAGE_BACKEND=sqlite` to return to local storage. The database token is used
+only by the backend.
+
+`DATABASE_TIMEOUT_SECONDS` defaults to 10 for HTTP operations and local SQLite
+lock waits. Failed remote operations return a safe error and are not silently
+retried or redirected to local storage. Transactions hold the remote connection
+only for database work, never while fetching Discogs data.
+
 ## Stack
 
 - **Frontend:** HTML, CSS, vanilla JavaScript, TypeScript API/session modules, and Vite.
 - **Backend:** Python, FastAPI, Pydantic, and Uvicorn; HTTPX for Discogs requests.
 - **Authentication:** Discogs OAuth via OAuthlib, encrypted credentials via Cryptography.
-- **Storage:** SQLite for sessions and response caches, plus a bounded in-memory release cache.
+- **Storage:** SQLite locally or Turso for sessions and response caches, plus a bounded in-memory release cache.
 - **Recommendations:** Deterministic metadata scoring; no trained model yet.
 
 To run the checks:
 
 ```sh
-.venv/bin/python -m unittest discover -s tests -v
+STORAGE_BACKEND=sqlite .venv/bin/python -m unittest discover -s tests -v
 npm test --prefix frontend
 npm run build --prefix frontend
 npm run lint --prefix frontend
 ```
 
-Tests use mocked Discogs responses and need no live credentials.
+Tests use mocked Discogs and Turso responses and need no live credentials.
+The explicit SQLite setting keeps unit tests local even when `.env` enables
+Turso. The separate `app.check_storage` command checks the real database.
 
 ## Known limitations
 
@@ -113,7 +146,7 @@ longer before caches are populated.
 
 **Deployment:** Search coordination and rate limiting are process-local. Use
 **one backend instance with one Uvicorn worker** until this state is shared.
-Authentication and response caches currently use local SQLite storage.
+Authentication and response caches support local SQLite or remote Turso storage.
 
 ## TODO
 
@@ -134,7 +167,7 @@ Implementations:
 
 Steps towards deployment:
 
-- [ ] Move response caches and authentication storage to persistent Turso storage.
+- [ ] Enable Turso storage and pass the live storage check for sessions and response caches.
 - [ ] Configure production routing for authentication, recommendations, and wantlist saves. Verify streaming.
 - [ ] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
 - [ ] Deploy one backend instance with one worker and a `/health` check.

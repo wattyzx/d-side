@@ -1,11 +1,10 @@
 import hashlib
 import json
-import sqlite3
 import time
-from contextlib import contextmanager
 
 from pathlib import Path
 from typing import Any, Callable
+from app.services.database import Database
 
 
 DEFAULT_CACHE_PATH = Path("data/cache.sqlite3")
@@ -16,31 +15,24 @@ class SQLiteCache:
         self,
         db_path: str | Path = DEFAULT_CACHE_PATH,
         clock: Callable[[], float] = time.time,
+        *,
+        database=None,
     ):
         self.db_path = Path(db_path)
         self.clock = clock
 
-        self.db_path.parent.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
+        self.database = database or Database(self.db_path)
 
         self._initialize()
 
 
-    @contextmanager
     def _connect(self):
-        connection = sqlite3.connect(self.db_path, timeout=10)
-        try:
-            with connection:
-                yield connection
-        finally:
-            connection.close()
+        return self.database.connect()
 
 
     def _initialize(self):
         with self._connect() as connection:
-            connection.execute("PRAGMA journal_mode=WAL")
+            self.database.configure(connection)
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS cache_entries (

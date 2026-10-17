@@ -1,40 +1,31 @@
-"""Local, durable OAuth state and sessions, separate from disposable caches."""
+"""Durable encrypted OAuth state and sessions, separate from disposable caches."""
 
 import hashlib
 import json
 import secrets
-import sqlite3
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
+from app.services.database import Database
 
 
 class AuthStore:
-    def __init__(self, db_path: Path, encryption_key: str, clock=time.time):
+    def __init__(self, db_path: Path, encryption_key: str, clock=time.time, *, database=None):
         self.clock = clock
         self.cipher = Fernet(encryption_key.encode())
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.db_path.touch(mode=0o600, exist_ok=True)
-        self.db_path.chmod(0o600)
+        self.database = database or Database(self.db_path, private=True)
         with self.connect() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+            self.database.configure(db)
             db.execute("""CREATE TABLE IF NOT EXISTS auth_records (
                 kind TEXT NOT NULL, digest TEXT NOT NULL, payload BLOB NOT NULL,
                 expires_at REAL NOT NULL, PRIMARY KEY (kind, digest)
             )""")
             db.execute("CREATE INDEX IF NOT EXISTS auth_expiry ON auth_records(expires_at)")
 
-    @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.db_path, timeout=10)
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
+        return self.database.connect()
 
     @staticmethod
     def digest(value: str) -> str:

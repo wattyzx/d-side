@@ -67,6 +67,10 @@ class Settings:
     cors_allowed_origins: tuple[str, ...] = ("http://localhost:5173",)
     auth_db_path: Path = PROJECT_ROOT / "data/auth.sqlite3"
     cache_db_path: Path = PROJECT_ROOT / "data/cache.sqlite3"
+    storage_backend: str = "sqlite"
+    turso_database_url: str = field(default="", repr=False)
+    turso_auth_token: str = field(default="", repr=False)
+    database_timeout_seconds: int = 10
     cache_cleanup_interval_seconds: int = 300
     release_cache_max_entries: int = 1000
     release_cache_ttl_seconds: int = 21600
@@ -95,6 +99,16 @@ class Settings:
     def from_environment(cls, env: Mapping[str, str] | None = None):
         env = os.environ if env is None else env
         defaults = cls()
+        storage_backend = env.get("STORAGE_BACKEND", "sqlite").lower()
+        if storage_backend not in ("sqlite", "turso"):
+            raise ConfigurationError("STORAGE_BACKEND must be sqlite or turso.")
+        turso_url = env.get("TURSO_DATABASE_URL", "")
+        turso_token = env.get("TURSO_AUTH_TOKEN", "")
+        if storage_backend == "turso":
+            from app.services.database import turso_http_url
+            turso_http_url(turso_url)
+            if not turso_token or any(char.isspace() for char in turso_token):
+                raise ConfigurationError("TURSO_AUTH_TOKEN is required and must not contain whitespace.")
         serve_frontend = env.get("SERVE_FRONTEND", "false").lower()
         if serve_frontend not in ("true", "false"):
             raise ConfigurationError("SERVE_FRONTEND must be true or false.")
@@ -121,6 +135,8 @@ class Settings:
                 raise ConfigurationError("COOKIE_SECURE cannot be false with an HTTPS callback.")
             secure = value == "true"
         return cls(
+            storage_backend=storage_backend, turso_database_url=turso_url, turso_auth_token=turso_token,
+            database_timeout_seconds=_positive_integer(env, "DATABASE_TIMEOUT_SECONDS", defaults.database_timeout_seconds),
             serve_frontend=serve_frontend == "true",
             frontend_url=frontend, callback_url=callback, cors_allowed_origins=origins,
             auth_db_path=_path(env.get("AUTH_DB_PATH", str(defaults.auth_db_path))),
