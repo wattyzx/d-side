@@ -83,6 +83,25 @@ these URL settings. Press **Ctrl+C** to stop the server.
 
 ### Production routing and streaming
 
+For a host with Python 3.10+ and Node.js 22.12+ available, use the repository
+root as the working directory and these commands:
+
+| Setting | Value |
+| --- | --- |
+| Build command | `bash build-production.sh` |
+| Start command | `bash run-production.sh` |
+| Instances | `1` |
+| Uvicorn workers | `1` (set by the start script) |
+| Health check path | `/health` |
+
+The build script installs backend dependencies into `.venv`, installs frontend
+dependencies from the lockfile (including build tools), and builds
+`frontend/dist`. Both directories must be available in the runtime environment.
+The start script binds to `0.0.0.0` and uses the host's `PORT` environment variable
+or port `8000` by default. `/health` checks process liveness only.
+Configure secrets and production URLs through the host's environment settings.
+For Render, use the configuration below.
+
 Route the entire public HTTPS origin to the single Uvicorn service started by
 `run-production.sh`. FastAPI serves `/` and build assets, while `/auth/*`,
 `/recommend`, `/recommend/stream`, `/recommend/cancel`, `/wantlist`, and `/health`
@@ -102,6 +121,39 @@ On the deployed domain, verify:
 
 Repeat the streaming check through the public domain, not just localhost. Keep
 the deployment checklist item open until that proxy-level check passes.
+
+### Deploy on Render
+
+The root `render.yaml` defines one Python web service in Frankfurt on the Free
+plan, with Turso storage. It builds both parts of the app and serves them from
+one HTTPS origin. Node and Python versions are pinned in the Blueprint. Python
+3.12 is selected for hosting; run the tests on that runtime before release.
+
+1. Commit and push the deployment files to your Git provider.
+2. In Render, select **New > Blueprint** and connect this repository and branch.
+3. Enter the five prompted values from your existing private configuration:
+   `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `DISCOGS_CONSUMER_KEY`,
+   `DISCOGS_CONSUMER_SECRET`, and `AUTH_ENCRYPTION_KEY`. Reuse your existing
+   encryption key; do not generate a different key on each deployment.
+4. Review the service settings and create the Blueprint. The build command is
+   `bash build-production.sh`; the start command is `bash run-render.sh`.
+5. Open the assigned `https://<service>.onrender.com` URL. The Render launcher
+   uses `RENDER_EXTERNAL_URL` as `FRONTEND_URL`. The app derives its callback
+   (`/auth/discogs/callback`), allowed origin, and Secure cookie setting from it.
+   If your Discogs application has a configured callback URL, update it to the
+   deployed callback. Do not copy localhost URL overrides into Render.
+6. Run the production routing checks above. In browser cookie storage, verify
+   `dside_session` is Secure, HttpOnly, and SameSite=Lax. Restart the service and
+   confirm that the session persists.
+
+Automatic application deploys are disabled initially. After pushing an update,
+use Render's manual deploy action. Keep one instance and one Uvicorn worker.
+Redeploys can interrupt active searches; verify cancellation and fresh searches
+after a deployment. `/health` is a liveness check, not a database readiness check.
+
+For a custom domain later, add it in Render and set `FRONTEND_URL` to its HTTPS
+origin. Remove stale `DISCOGS_CALLBACK_URL` and `CORS_ALLOWED_ORIGINS` overrides
+or update them to match. Restart and repeat OAuth verification.
 
 ### Storage: SQLite or Turso
 

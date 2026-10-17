@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: d-side
+    runtime: python
+    region: frankfurt
+    plan: free
+    numInstances: 1
+    buildCommand: bash build-production.sh
+    startCommand: bash run-render.sh
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: NODE_VERSION
+        value: 22.23.3
+      - key: STORAGE_BACKEND
+        value: turso
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: DISCOGS_CONSUMER_KEY
+        sync: false
+      - key: DISCOGS_CONSUMER_SECRET
+        sync: false
+      - key: AUTH_ENCRYPTION_KEY
+        sync: false
