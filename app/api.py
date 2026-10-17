@@ -7,7 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.services.database import DatabaseError
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from app.seller_input import normalize_seller
 
 from app.config import PROJECT_ROOT, get_settings, load_environment
 from app.frontend import mount_frontend
@@ -68,10 +69,15 @@ app.add_middleware(
 )
 
 class RecommendRequest(BaseModel):
-    seller: str = Field(min_length=1)
+    seller: str = Field(min_length=1, max_length=2048)
     search_id: UUID | None = None
     min_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     max_price: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+    @field_validator("seller")
+    @classmethod
+    def parse_seller(cls, value):
+        return normalize_seller(value)
 
     @model_validator(mode="after")
     def check_price_range(self):

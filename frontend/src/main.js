@@ -3,11 +3,20 @@ import { getAccount, logout, discogsLoginUrl } from './api/auth.ts';
 import { getRecommendations, cancelSearch, addToWantlist, sortRecommendations } from './api/recommendations.ts';
 import { session } from './session.ts';
 import { createReleasePlayer, playableVideos } from './player.js';
+import { createSearchStorage } from './search-storage.js';
+
+// Accessing sessionStorage itself can throw in restricted browser contexts.
+let browserStorage;
+try { browserStorage = window.sessionStorage; } catch { /* Recovery unavailable. */ }
+const searchStorage = createSearchStorage(browserStorage);
+let restoredSearch = false;
+let leavingPage = false;
 
 const previewPlayer = createReleasePlayer();
 
 const elements = Object.fromEntries([...document.querySelectorAll('[id]')].map(node => [node.id, node]));
 const state = { account: null, checking: true, active: null, cancelling: false, saving: false,
+  recoveringId: null,
   seller: '', searched: false, hasMore: true, records: [], wants: [], demands: [],
   tab: 'recommendations', expanded: new Set(), priceRange: {} };
 const tabs = [
@@ -38,6 +47,39 @@ function link(text, href, external = false) {
 }
 function busy() { return !!state.active || state.cancelling || state.saving; }
 function status(text) { elements.status.textContent = text; }
+
+function persistSearch() {
+  if (leavingPage || !state.account || !state.searched) return;
+  const saved = searchStorage.save(state.account.username, {
+    seller: state.seller, priceRange: state.priceRange, hasMore: state.hasMore,
+    records: state.records, wants: state.wants, demands: state.demands, tab: state.tab,
+    activeId: state.recoveringId ?? (state.active && !state.active.done && !state.cancelling ? state.active.id : null),
+    status: elements.status.textContent, notice: elements.notice.textContent,
+    error: elements.error.textContent,
+  });
+  elements['recovery-warning'].hidden = saved;
+}
+
+function prepareNavigation() {
+  if (leavingPage) return;
+  // Save the active ID before aborting. Navigation failures from the old page
+  // must not turn this recoverable search into a completed/failed snapshot.
+  persistSearch();
+  leavingPage = true;
+  state.active?.controller.abort();
+}
+window.addEventListener('beforeunload', prepareNavigation);
+window.addEventListener('pagehide', prepareNavigation);
+window.addEventListener('pageshow', () => {
+  // A browser may restore this document from its back/forward cache.
+  if (!leavingPage) return;
+  leavingPage = false;
+  state.active = null;
+  state.cancelling = false;
+  state.recoveringId = null;
+  restoredSearch = false;
+  void checkAccount();
+});
 
 function priceRange() {
   return {
@@ -162,7 +204,10 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     demand.setAttribute('aria-label', `${demand.textContent}; ${demand.title}`);
   }
   links.append(demand);
-  links.append(link('Listing ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true));
+  const buy = link('Buy on Discogs ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
+  buy.title = 'Open this listing to add it to your cart on Discogs';
+  buy.setAttribute('aria-label', `Buy ${title} on Discogs (opens a new tab)`);
+  links.append(buy);
   if (recommend) {
     const button = node('button', '+ Wantlist');
     button.type = 'button';
@@ -236,10 +281,13 @@ function render() {
 }
 
 session.onEnd(() => {
+  searchStorage.clear();
+  elements['recovery-warning'].hidden = true;
   previewPlayer.close();
   state.expanded.clear();
   state.active?.controller.abort();
   Object.assign(state, { account: null, active: null, cancelling: false, saving: false,
+    recoveringId: null,
     records: [], wants: [], demands: [], tab: 'recommendations', seller: '', searched: false, hasMore: true });
   elements.notice.textContent = '';
   elements.error.textContent = '';
@@ -254,8 +302,52 @@ async function checkAccount() {
     state.account = await getAccount();
     elements['account-error'].textContent = authError ? loginErrors[authError] ?? loginErrors.provider : '';
     status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+    if (!state.account) searchStorage.clear();
+    else if (!restoredSearch) {
+      restoredSearch = true;
+      state.checking = false;
+      await restoreSearch();
+    }
   } catch (error) { elements['account-error'].textContent = error.message; }
   finally { state.checking = false; render(); }
+}
+
+async function restoreSearch() {
+  const saved = searchStorage.load(state.account.username);
+  if (!saved) return;
+  Object.assign(state, { seller: saved.seller, priceRange: saved.priceRange,
+    hasMore: saved.hasMore, records: saved.records, wants: saved.wants,
+    demands: saved.demands, tab: saved.tab, searched: true });
+  elements.seller.value = saved.seller;
+  elements['min-price'].value = saved.priceRange.minPrice ?? '';
+  elements['max-price'].value = saved.priceRange.maxPrice ?? '';
+  elements.notice.textContent = saved.notice ?? '';
+  elements.error.textContent = saved.error ?? '';
+  status(saved.status ?? 'Previous results restored.');
+  if (!saved.activeId) return;
+  const revision = session.getSnapshot().revision;
+  state.cancelling = true;
+  state.recoveringId = saved.activeId;
+  // Retain the old ID if this page is refreshed again during recovery.
+  status('Restoring results and resuming search…');
+  render();
+  try {
+    await cancelSearch(saved.activeId);
+    if (leavingPage || session.getSnapshot().revision !== revision) return;
+    state.cancelling = false;
+    state.recoveringId = null;
+    state.hasMore = true;
+    await search(true);
+  } catch (error) {
+    if (leavingPage || session.getSnapshot().revision !== revision) return;
+    elements.error.textContent = error.message;
+    status('Results restored. Use Search more to try continuing.');
+  } finally {
+    if (!leavingPage && session.getSnapshot().revision === revision) {
+      state.cancelling = false;
+      state.recoveringId = null;
+    }
+  }
 }
 
 function upsert(records, record) {
@@ -282,13 +374,18 @@ function handleEvent(event) {
       if (Array.isArray(event.records)) state.demands = event.records;
       break;
     case 'done':
+      if (state.active) state.active.done = true;
       state.hasMore = event.has_more ?? false;
       status(state.hasMore ? 'Done — more records available' : event.inventory_truncated
         ? 'Done — all accessible records searched' : 'Done — all available records searched');
       break;
-    case 'error': elements.error.textContent = event.message ?? 'Search failed.'; break;
+    case 'error':
+      if (state.active) state.active.done = true;
+      elements.error.textContent = event.message ?? 'Search failed.';
+      break;
   }
   render();
+  persistSearch();
 }
 
 async function search(more = false) {
@@ -311,22 +408,26 @@ async function search(more = false) {
   state.active = request;
   status(more ? 'Searching for more records…' : 'Starting…');
   render();
+  persistSearch();
   try {
     await getRecommendations(seller, {
       searchId: request.id, signal: request.controller.signal,
       includeDemand: true,
       ...state.priceRange,
       excludeReleaseIds: [...state.records, ...state.wants].map(record => record.release_id),
-      onEvent: event => { if (state.active === request && !state.cancelling) handleEvent(event); },
+      onEvent: event => { if (!leavingPage && state.active === request && !state.cancelling) handleEvent(event); },
     });
   } catch (error) {
-    if (!request.controller.signal.aborted && state.active === request) {
+    if (!leavingPage && !request.controller.signal.aborted && state.active === request) {
       elements.error.textContent = error.message;
       status('Stopped before completion. Search more to continue.');
     }
   } finally {
-    if (state.active === request && !state.cancelling) state.active = null;
-    render();
+    if (!leavingPage) {
+      if (state.active === request && !state.cancelling) state.active = null;
+      render();
+      persistSearch();
+    }
   }
 }
 
@@ -334,6 +435,7 @@ function selectTab(index, focus = false) {
   const tab = tabs[(index + tabs.length) % tabs.length];
   state.tab = tab.name;
   render();
+  persistSearch();
   if (focus) elements[tab.button].focus();
 }
 tabs.forEach((tab, index) => {
@@ -360,6 +462,7 @@ elements.cancel.onclick = async () => {
   request.controller.abort();
   status('Cancelling search…');
   render();
+  persistSearch();
   try {
     await cancelSearch(request.id);
     if (state.active === request) status('Search cancelled. Search more to continue.');
@@ -368,6 +471,7 @@ elements.cancel.onclick = async () => {
   } finally {
     if (state.active === request) { state.cancelling = false; state.active = null; }
     render();
+    persistSearch();
   }
 };
 
@@ -385,7 +489,7 @@ async function saveRecord(record) {
     status('Added to your wantlist.');
   } catch (error) {
     if (session.getSnapshot().revision === revision) elements.error.textContent = error.message;
-  } finally { state.saving = false; render(); }
+  } finally { state.saving = false; render(); persistSearch(); }
 }
 
 void checkAccount();

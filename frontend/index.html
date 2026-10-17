@@ -14,7 +14,7 @@
           <span class="brand-subtitle">Decide what to dig</span>
         </a>
         <form id="search-form">
-          <input id="seller" name="seller" aria-label="Discogs seller" placeholder="Discogs seller" required autocomplete="off">
+          <input id="seller" name="seller" aria-label="Discogs seller username or shop URL" placeholder="Seller name or Discogs shop URL" required maxlength="2048" autocomplete="off">
           <button id="search" disabled>Find records</button>
           <button id="cancel" type="button" hidden>Cancel search</button>
         </form>
@@ -36,6 +36,7 @@
         <p id="account-error" class="error" role="alert"></p>
         <p id="status" role="status" aria-live="polite">Checking your connection…</p>
         <p id="notice"></p>
+        <p id="recovery-warning" class="error" role="status" hidden>Browser storage is unavailable or full. Results cannot be restored after refreshing this page.</p>
         <p id="error" class="error" role="alert"></p>
         <div id="results-layout" class="results-layout" hidden>
           <div class="result-tabs" role="tablist" aria-label="Records">

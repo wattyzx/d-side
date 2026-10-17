@@ -11,11 +11,17 @@ You can open each record on Discogs or add it straight to your wantlist.
 
 1. **Log in with Discogs.** OAuth connects your account and creates a persistent session.
 2. **Load your collection and wantlist.** Your collection defines your taste profile: styles, genres, artists, labels, and release years. Your wantlist identifies records you already want.
-3. **Pick a seller.** The app scans their inventory page by page, skipping releases you own and showing wantlist matches as it finds them.
+3. **Pick a seller.** Enter their username or paste a Discogs shop/profile URL. The app scans their inventory page by page, skipping releases you own and showing wantlist matches as it finds them.
 4. **Pre-rank candidates.** With the fetched metadata (artist, label, year, and demand) from the seller's inventory, the pre-rank select up to 25 promising releases progressively. After the scan, up to 5 additional releases from across the remaining pool give less obvious matches a chance.
 5. **Calculate the final score.** Selected releases get their full Discogs metadata. Musical styles drive the score, with smaller artist, label, and year bonuses; genres provide a fallback when style comparison is unavailable. Recommendations above **0.1** are shown; wantlist matches do not need to meet this threshold.
 
 Results arrive during the search. **Search more** scores another batch of unseen releases from the scanned inventory. **Cancel search** keeps results already received and stops further work once any in-flight Discogs request finishes or times out.
+
+Refreshing restores results and filters in the same browser tab and automatically
+resumes an interrupted search after its previous worker stops. This starts a new
+batch excluding received results, rather than keeping the original search alive
+in the background. Saved results expire after 24 hours and are cleared on logout.
+**Buy on Discogs** opens the exact listing, where you can add it to your cart.
 
 ## Design choices and issues solved
 
@@ -237,18 +243,17 @@ Implementations:
 - [X] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
 - [X] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
 - [X] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
-- [ ] Add a **Add to cart** button next to each release. 
+- [x] Add a **Buy on Discogs** action for each listing; cart actions happen on Discogs.
 
 Steps towards deployment:
 
 - [X] Enable Turso storage and pass the live storage check for sessions and response caches.
-- [ ] Configure production routing for authentication, recommendations, and wantlist saves. Verify streaming.
-- [ ] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
-- [ ] Deploy one backend instance with one worker and a `/health` check.
-- [ ] Pass Python tests, frontend tests, production build, and lint checks.
+- [X] Configure production routing for authentication, recommendations, and wantlist saves. Verify streaming.
+- [X] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
+- [X] Deploy one backend instance with one worker and a `/health` check.
+- [X] Pass Python tests, frontend tests, production build, and lint checks.
 - [ ] Test load limitations. Need to establish `MAX_CONCURRENT_USERS`.
-- [ ] Smoke-test login, refresh, search, cancellation, **Search more**, saves, and logout; verify persistence across restarts and behavior after hosting sleep.
-
+- [X] Smoke-test login, refresh, search, cancellation, **Search more**, saves, and logout; verify persistence across restarts and behavior after hosting sleep.
 ## What’s next
 
 **Hosted prototype:** The proposed setup is one FastAPI service serving the built vanilla frontend, with Turso for persistent storage. Deployment is still planned.

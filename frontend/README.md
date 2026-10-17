@@ -30,6 +30,24 @@ URL to match. Rebuild after frontend changes.
 
 ## Results and previews
 
+The seller field accepts usernames, Discogs seller shop/profile URLs, user
+profile URLs, and marketplace URLs containing a `seller` query parameter.
+Release and individual listing URLs do not identify a seller and are rejected.
+
+Search results and price filters are saved in the current tab's session storage
+for up to 24 hours. Refresh restores them after confirming the account. An
+interrupted search is automatically resumed with a new request after cancelling
+and waiting for its previous worker; previously received recommendations and
+wantlist matches are excluded from the new batch. This can rescan cached pages
+and select additional candidates; it does not keep the original worker running
+while the page is closed. Completed searches restore without starting another
+request. Signing out or an expired session clears saved results. If browser
+storage is disabled or full, the UI warns that refresh recovery is unavailable.
+
+**Buy on Discogs** opens the exact marketplace listing in a new tab. Add the item
+to the cart there using the Discogs website; the app does not claim to have
+modified the Discogs cart.
+
 Results use three tabs: Recommendations, Wantlist, and On demand. On demand
 ranks up to 30 distinct releases from the scanned inventory using the backend's
 community demand score, excluding owned and wantlisted records. It needs no

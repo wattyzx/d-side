@@ -13,6 +13,14 @@ const result = (id, score) => ({
 const eventLine = (recommendation) =>
   JSON.stringify({ type: "recommendation", recommendation }) + "\n";
 
+test("shows the seller validation message for unsupported pasted URLs", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => Response.json({ detail: [
+    { msg: "Value error, Enter a seller username or a Discogs shop/profile URL." },
+  ] }, { status: 422 }));
+  await assert.rejects(getRecommendations("https://example.com/shop"),
+    /^Error: Enter a seller username or a Discogs shop\/profile URL\.$/);
+});
+
 test("price bounds including zero are sent with continuation exclusions", async (t) => {
   t.mock.method(globalThis, "fetch", async (_, options) => {
     assert.deepEqual(JSON.parse(options.body), {

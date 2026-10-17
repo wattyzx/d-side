@@ -87,6 +87,18 @@ class AuthenticatedAPITests(unittest.TestCase):
             self.assertEqual(client.post(path, json=body).status_code, 401)
         self.assertEqual(client.get("/health").status_code, 200)
 
+    def test_seller_urls_are_normalized_before_search(self):
+        client = self.client("Alice")
+        url = "https://www.discogs.com/seller/Some.Shop/shop?limit=250"
+        with patch("app.api.recommend", return_value={}) as recommend:
+            self.assertEqual(client.post("/recommend", json={"seller": url}).status_code, 200)
+            recommend.assert_called_once_with(username="Alice", seller="Some.Shop")
+        with patch("app.api.recommend_stream", return_value=(event for event in ['{"type":"done"}\n'])) as stream:
+            self.assertEqual(client.post("/recommend/stream", json={"seller": url}).status_code, 200)
+            stream.assert_called_once_with(username="Alice", seller="Some.Shop", exclude_release_ids=[])
+        for endpoint in ("/recommend", "/recommend/stream"):
+            self.assertEqual(client.post(endpoint, json={"seller": "https://example.com/user/shop"}).status_code, 422)
+
     def test_search_uses_session_identity_and_credentials_despite_supplied_username(self):
         def recommend(username, seller):
             self.assertEqual(current_credentials().token, "Alice-token")

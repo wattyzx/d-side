@@ -46,7 +46,12 @@ export async function apiFetch(
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     assertCurrentSession(revision);
-    throw new Error(typeof body?.detail === "string" ? body.detail : fallback);
+    const validationMessage = Array.isArray(body?.detail)
+      ? body.detail.find((item: { msg?: unknown }) => typeof item?.msg === "string")?.msg
+      : undefined;
+    throw new Error(typeof body?.detail === "string" ? body.detail
+      : typeof validationMessage === "string" ? validationMessage.replace(/^Value error, /, "")
+      : fallback);
   }
   return response;
 }
