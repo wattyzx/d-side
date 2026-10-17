@@ -128,6 +128,39 @@ class SearchControlTests(unittest.TestCase):
                 next_job = search_registry.start(self.account.username)
                 search_registry.finish(next_job)
 
+    def test_stream_delivers_events_and_heartbeats_before_worker_finishes(self):
+        job = search_registry.start(self.account.username)
+        heartbeat_received = threading.Event()
+        messages = []
+
+        def records():
+            yield '{"type":"status"}\n'
+            if not heartbeat_received.wait(2):
+                raise AssertionError("No heartbeat while the worker was blocked")
+            yield '{"type":"done"}\n'
+
+        response = SearchStreamingResponse(records(), self.account, job)
+
+        async def receive():
+            await anyio.sleep_forever()
+
+        async def send(message):
+            messages.append(message)
+            if message.get("body") == b"\n":
+                self.assertTrue(any(item.get("body") == b'{"type":"status"}\n'
+                                    for item in messages))
+                heartbeat_received.set()
+
+        with patch("app.search_response.STREAM_HEARTBEAT_SECONDS", 0.02):
+            asyncio.run(response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send))
+        headers = dict(messages[0]["headers"])
+        self.assertEqual(headers[b"cache-control"], b"no-store, no-transform")
+        self.assertEqual(headers[b"x-accel-buffering"], b"no")
+        self.assertTrue(heartbeat_received.is_set())
+        self.assertTrue(any(item.get("body") == b'{"type":"done"}\n' for item in messages))
+        self.assertFalse(messages[-1]["more_body"])
+        self.assertTrue(job.finished.is_set())
+
     def test_send_failure_and_parent_cancellation_release_admission(self):
         for mode in ("send-failure", "parent-cancellation"):
             with self.subTest(mode=mode):

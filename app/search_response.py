@@ -11,6 +11,7 @@ from app.services.search_control import (
 )
 
 _END = object()
+STREAM_HEARTBEAT_SECONDS = 15
 _search_limiter: RunVar[anyio.CapacityLimiter] = RunVar("search_worker_limiter")
 
 
@@ -32,7 +33,44 @@ class SearchStreamingResponse(StreamingResponse):
         self.iterator = iterator
         self.account = account
         self.job = job
-        super().__init__(self.events(), media_type="application/x-ndjson")
+        super().__init__(self.events(), media_type="application/x-ndjson", headers={
+            "Cache-Control": "no-store, no-transform",
+            "X-Accel-Buffering": "no",
+        })
+
+    async def stream_response(self, send):
+        await send({"type": "http.response.start", "status": self.status_code,
+                    "headers": self.raw_headers})
+        # A bounded channel preserves backpressure. Heartbeats keep idle proxy
+        # connections alive while one worker is fetching a collection or page.
+        sender, receiver = anyio.create_memory_object_stream(0)
+        async with sender, receiver, anyio.create_task_group() as group:
+            async def produce():
+                async with sender:
+                    async for chunk in self.body_iterator:
+                        await sender.send(chunk)
+
+            group.start_soon(produce)
+            try:
+                while True:
+                    with anyio.move_on_after(STREAM_HEARTBEAT_SECONDS) as timeout:
+                        try:
+                            chunk = await receiver.receive()
+                        except anyio.EndOfStream:
+                            break
+                    if timeout.cancel_called:
+                        # Blank NDJSON lines are ignored by the frontend parser.
+                        chunk = b"\n"
+                    elif not isinstance(chunk, (bytes, memoryview)):
+                        chunk = chunk.encode(self.charset)
+                    await send({"type": "http.response.body", "body": chunk,
+                                "more_body": True})
+            except OSError:
+                return  # A disconnected client cannot receive further chunks.
+            finally:
+                self.job.cancelled.set()
+                group.cancel_scope.cancel()
+        await send({"type": "http.response.body", "body": b"", "more_body": False})
 
     def next_event(self):
         with discogs_session(self.account), search_cancellation(self.job.cancelled):

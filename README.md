@@ -81,6 +81,28 @@ environment variables when needed. Set `FRONTEND_URL` and any explicit
 `DISCOGS_CALLBACK_URL` in the environment or `.env`; the script does not replace
 these URL settings. Press **Ctrl+C** to stop the server.
 
+### Production routing and streaming
+
+Route the entire public HTTPS origin to the single Uvicorn service started by
+`run-production.sh`. FastAPI serves `/` and build assets, while `/auth/*`,
+`/recommend`, `/recommend/stream`, `/recommend/cancel`, `/wantlist`, and `/health`
+retain their backend routes. The frontend uses relative API URLs; no separate
+API hostname or Vite development proxy is needed in production.
+
+On the deployed domain, verify:
+
+1. `/` loads the built frontend and its assets; `/health` returns JSON.
+2. Discogs login returns to the same domain and `/auth/me` identifies the user.
+3. Start a search with an uncached collection or seller. In browser developer
+   tools, inspect `/recommend/stream`: it must return NDJSON, and the UI must
+   update while the request is still pending, not only when it completes.
+4. Cancel an active search, then run **Search more**. Confirm a new search can
+   start after cancellation and results continue arriving progressively.
+5. Save a record to the wantlist and confirm it on Discogs, then log out.
+
+Repeat the streaming check through the public domain, not just localhost. Keep
+the deployment checklist item open until that proxy-level check passes.
+
 ### Storage: SQLite or Turso
 
 SQLite remains the default. To use the Turso **libSQL** database, add its
@@ -160,14 +182,14 @@ Candidate selection:
 
 Implementations:
 
-- [x] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
-- [x] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
+- [X] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
+- [X] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
 - [X] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
 - [ ] Add a **Add to cart** button next to each release. 
 
 Steps towards deployment:
 
-- [ ] Enable Turso storage and pass the live storage check for sessions and response caches.
+- [X] Enable Turso storage and pass the live storage check for sessions and response caches.
 - [ ] Configure production routing for authentication, recommendations, and wantlist saves. Verify streaming.
 - [ ] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
 - [ ] Deploy one backend instance with one worker and a `/health` check.

@@ -55,6 +55,16 @@ test("handles fragmented JSON and UTF-8 plus a final event without a newline", a
   assert.equal(results[0].title, "Café");
 });
 
+test("ignores blank heartbeat lines between recommendation events", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response(
+    '\n' + eventLine(result(1, 0.5)) + '\n\n' + '{"type":"done"}\n',
+  ));
+  const events = [];
+  const results = await getRecommendations("seller", { onEvent: event => events.push(event) });
+  assert.equal(results.length, 1);
+  assert.deepEqual(events.map(event => event.type), ["recommendation", "done"]);
+});
+
 test("reports interrupted streams after publishing available results", async (t) => {
   const body = new ReadableStream({
     start(controller) {
