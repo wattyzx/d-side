@@ -91,7 +91,7 @@ test('reload restores results, waits for old search cancellation, resumes, and c
   assert.equal(store.load('Alice').hasMore, false);
   function descendants(item) { return [item, ...item.children.flatMap(descendants)]; }
   const buy = elements.results.children.flatMap(descendants)
-    .find(item => item.textContent === 'Buy on Discogs ↗');
+    .find(item => item.textContent === '🛒 ↗');
   assert.equal(buy.href, 'https://www.discogs.com/sell/item/101');
   assert.equal(buy.target, '_blank');
   await elements.account.children.find(item => item.textContent === 'Sign out').onclick();
@@ -129,3 +129,41 @@ for (const navigationEvent of ['beforeunload', 'pagehide']) {
     assert.equal(elements.status.textContent.includes('Stopped before completion'), false);
   });
 }
+
+test('logo clears results and cancels recovery without restarting the search', async t => {
+  const { elements, store, listeners } = fixture(t);
+  const oldId = '00000000-0000-0000-0000-000000000001';
+  store.save('Alice', { seller: 'shop', priceRange: { minPrice: 5 },
+    records: [record(1)], wants: [], demands: [], tab: 'recommendations',
+    hasMore: true, activeId: oldId });
+  let finishCancel;
+  const cancelled = new Promise(resolve => { finishCancel = resolve; });
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push(url);
+    if (url === '/auth/me') return Response.json({ username: 'Alice', authenticated: true });
+    if (url === '/recommend/cancel') {
+      assert.equal(JSON.parse(options.body).search_id, oldId);
+      await cancelled;
+      return Response.json({ cancelled: true });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+  await import('../src/main.js?home-reset-test');
+  await until(() => calls.includes('/recommend/cancel'));
+  let prevented = false;
+  const reset = elements.home.onclick({ preventDefault() { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(elements['results-layout'].hidden, true);
+  assert.equal(elements.seller.value, '');
+  assert.equal(elements['min-price'].value, '');
+  assert.equal(store.load('Alice'), null);
+  finishCancel();
+  await reset;
+  await until(() => !elements.search.disabled);
+  assert.equal(calls.includes('/recommend/stream'), false);
+  assert.equal(elements.error.textContent, '');
+  assert.equal(elements.account.children[0].textContent, 'Alice');
+  listeners.pagehide();
+  assert.equal(store.load('Alice'), null);
+});

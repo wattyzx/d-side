@@ -11,6 +11,8 @@ try { browserStorage = window.sessionStorage; } catch { /* Recovery unavailable.
 const searchStorage = createSearchStorage(browserStorage);
 let restoredSearch = false;
 let leavingPage = false;
+let searchViewRevision = 0;
+let returningHome = false;
 
 const previewPlayer = createReleasePlayer();
 
@@ -204,7 +206,7 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     demand.setAttribute('aria-label', `${demand.textContent}; ${demand.title}`);
   }
   links.append(demand);
-  const buy = link('Buy on Discogs ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
+  const buy = link('🛒 ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
   buy.title = 'Open this listing to add it to your cart on Discogs';
   buy.setAttribute('aria-label', `Buy ${title} on Discogs (opens a new tab)`);
   links.append(buy);
@@ -313,6 +315,7 @@ async function checkAccount() {
 }
 
 async function restoreSearch() {
+  const viewRevision = searchViewRevision;
   const saved = searchStorage.load(state.account.username);
   if (!saved) return;
   Object.assign(state, { seller: saved.seller, priceRange: saved.priceRange,
@@ -333,17 +336,17 @@ async function restoreSearch() {
   render();
   try {
     await cancelSearch(saved.activeId);
-    if (leavingPage || session.getSnapshot().revision !== revision) return;
+    if (leavingPage || searchViewRevision !== viewRevision || session.getSnapshot().revision !== revision) return;
     state.cancelling = false;
     state.recoveringId = null;
     state.hasMore = true;
     await search(true);
   } catch (error) {
-    if (leavingPage || session.getSnapshot().revision !== revision) return;
+    if (leavingPage || searchViewRevision !== viewRevision || session.getSnapshot().revision !== revision) return;
     elements.error.textContent = error.message;
     status('Results restored. Use Search more to try continuing.');
   } finally {
-    if (!leavingPage && session.getSnapshot().revision === revision) {
+    if (!leavingPage && searchViewRevision === viewRevision && session.getSnapshot().revision === revision) {
       state.cancelling = false;
       state.recoveringId = null;
     }
@@ -454,6 +457,43 @@ for (const id of ['min-price', 'max-price']) {
   elements[id].oninput = () => { validatePrices(); render(); };
 }
 elements['search-form'].onsubmit = event => { event.preventDefault(); void search(); };
+elements.home.onclick = async event => {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (returningHome) return;
+  returningHome = true;
+  searchViewRevision++;
+  restoredSearch = true;
+  const revision = session.getSnapshot().revision;
+  const searchId = state.active?.id ?? state.recoveringId;
+  state.active?.controller.abort();
+  previewPlayer.close();
+  searchStorage.clear();
+  state.expanded.clear();
+  Object.assign(state, { active: null, recoveringId: null, cancelling: !!searchId,
+    saving: false, seller: '', searched: false, hasMore: true, records: [],
+    wants: [], demands: [], tab: 'recommendations', priceRange: {} });
+  for (const id of ['seller', 'min-price', 'max-price']) elements[id].value = '';
+  validatePrices();
+  elements.notice.textContent = '';
+  elements.error.textContent = '';
+  elements['recovery-warning'].hidden = true;
+  status(searchId ? 'Stopping search…' : state.account
+    ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+  render();
+  try {
+    if (searchId) await cancelSearch(searchId);
+    if (session.getSnapshot().revision === revision) {
+      status(state.account ? 'Enter a seller to find records.' : 'Connect with Discogs to search.');
+    }
+  } catch (error) {
+    if (session.getSnapshot().revision === revision) elements.error.textContent = error.message;
+  } finally {
+    returningHome = false;
+    if (session.getSnapshot().revision === revision) state.cancelling = false;
+    render();
+  }
+};
 elements.more.onclick = () => search(true);
 elements.cancel.onclick = async () => {
   const request = state.active;
@@ -480,16 +520,19 @@ async function saveRecord(record) {
   state.saving = true;
   elements.error.textContent = '';
   const revision = session.getSnapshot().revision;
+  const viewRevision = searchViewRevision;
   render();
   try {
     await addToWantlist(record.release_id);
-    if (session.getSnapshot().revision !== revision) return;
+    if (searchViewRevision !== viewRevision || session.getSnapshot().revision !== revision) return;
     state.wants = upsert(state.wants, record);
     state.records = state.records.filter(item => item.release_id !== record.release_id);
     status('Added to your wantlist.');
   } catch (error) {
-    if (session.getSnapshot().revision === revision) elements.error.textContent = error.message;
-  } finally { state.saving = false; render(); persistSearch(); }
+    if (searchViewRevision === viewRevision && session.getSnapshot().revision === revision) elements.error.textContent = error.message;
+  } finally {
+    if (searchViewRevision === viewRevision) { state.saving = false; render(); persistSearch(); }
+  }
 }
 
 void checkAccount();
