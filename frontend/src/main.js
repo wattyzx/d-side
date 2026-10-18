@@ -226,7 +226,7 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     demand.setAttribute('aria-label', demand.title);
   }
   links.append(demand);
-  const buy = link('🛒 ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
+  const buy = link('Buy ↗', `https://www.discogs.com/sell/item/${Number(record.listing_id)}`, true);
   buy.title = 'Open this listing to add it to your cart on Discogs';
   buy.setAttribute('aria-label', `Buy ${title} on Discogs (opens a new tab)`);
   if (recommend) {
@@ -283,7 +283,7 @@ function render() {
   elements.cancel.textContent = state.cancelling ? 'Cancelling…' : 'Cancel search';
   const visible = sortRecommendations(state.records).filter(record => record.score > 0.1);
   const favicon = state.account && (visible.length || state.wants.length || state.demands.length)
-    ? '/crate_full.jpg' : '/crate_empty.jpg';
+    ? '/crate_full.png' : '/crate_empty.png';
   if (favicon !== currentFavicon) {
     elements.favicon.href = favicon;
     currentFavicon = favicon;
@@ -409,8 +409,8 @@ function handleEvent(event) {
     case 'done':
       if (state.active) state.active.done = true;
       state.hasMore = event.has_more ?? false;
-      status(state.hasMore ? 'Done — more records available' : event.inventory_truncated
-        ? 'Done — all accessible records searched' : 'Done — all available records searched');
+      status(state.hasMore ? 'Done. More records available' : event.inventory_truncated
+        ? 'Done. All accessible records searched' : 'Done. All available records searched');
       break;
     case 'error':
       if (state.active) state.active.done = true;

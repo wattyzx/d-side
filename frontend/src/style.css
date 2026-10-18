@@ -14,7 +14,7 @@ main { width: min(1000px, calc(100% - 48px)); min-height: min(1000px, calc(100vw
 .filter-panel { padding: 8px 20px; }
 .filter-panel .price-filters { margin: 0; }
 .filter-panel #status { margin: 8px 0 0; }
-#digging-prompt { margin: 28px 0 16px; text-align: center; color: #fff; font-size: 14px; letter-spacing: .3px; text-shadow: 0 1px 3px #000; }
+#digging-prompt { margin: 64px 0 16px; text-align: center; color: #fff; font-size: 16px; letter-spacing: .3px; text-shadow: 0 1px 3px #000; }
 a { color: inherit; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
