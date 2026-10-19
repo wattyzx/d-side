@@ -201,6 +201,7 @@ function recordRow(record, recommend, demandRanked = false, rank) {
   const title = [record.artists.join(', '), record.title].filter(Boolean).join(' — ');
   const release = link(title, `https://www.discogs.com/release/${Number(record.release_id)}`, true);
   release.className = 'title';
+  release.title = title;
   const price = node('span', formatPrice(record.price, record.currency), 'price');
   price.title = record.currency;
   heading.append(release, price);
