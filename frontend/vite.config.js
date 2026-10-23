@@ -1,4 +1,12 @@
 export default {
+  build: {
+    rollupOptions: {
+      input: {
+        main: new URL('./index.html', import.meta.url).pathname,
+        privacy: new URL('./privacy/index.html', import.meta.url).pathname,
+      },
+    },
+  },
   server: {
     port: 5173,
     strictPort: true,

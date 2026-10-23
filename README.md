@@ -33,6 +33,42 @@ in the background. Saved results expire after 24 hours and are cleared on logout
 - **Account isolation:** Personal caches are separated by account; public release metadata can be shared. Wantlist saves invalidate cached data atomically, preventing older in-flight fetches from restoring stale responses.
 - **Persistent login:** OAuth credentials stay encrypted in the configured database; the browser receives an HttpOnly session cookie. Pending logins expire after ten minutes, sessions after seven days, and signing out deletes the stored session and credentials.
 
+## Privacy notice
+
+The standalone `/privacy/` page is built from `frontend/privacy/index.html` and
+works without JavaScript or a Discogs login. Vite builds both HTML entry points;
+the backend serves the privacy directory through its existing static-file mount.
+The homepage footer and signed-out account area link to it.
+
+The notice is a **draft**, with `noindex` until these launch requirements are resolved:
+
+- Supply the controller's name, contact address and privacy email; confirm whether
+  a representative or data protection officer is applicable.
+- Confirm the proposed legal bases and legitimate-interest assessments.
+- Minimise complete Discogs API responses before caching: current responses can
+  include notes, ratings, collection identifiers and seller details not used by
+  recommendations. Disclose only the actual resulting data categories.
+- Add justified retention/deletion for username-bearing `cache_namespaces`
+  metadata, which currently has no automatic expiry. Account for working-memory
+  preference caches as well as database payloads.
+- Assess whether automatic search recovery qualifies for the strictly necessary
+  storage exemption; session storage is not automatically exempt.
+- Determine how Article 14 information reaches sellers whose personal data is
+  retrieved, or document an applicable exception.
+- Render hosting and Turso database EU regions are confirmed by the operator.
+  Verify provider agreements, recipient entities, any international access or
+  transfers, and applicable safeguards.
+- Set accurate log, backup and correspondence retention periods and verify that
+  the deployed cookie/session settings match the notice.
+- Verify the implemented YouTube consent gate and withdrawal-by-reload in a
+  browser, including network requests before consent. Inventory actual provider
+  storage and durations.
+- Confirm a working process for access, correction, portability and deletion requests.
+
+After completing these items, replace the draft notes with confirmed disclosures,
+update the notice date and remove its `noindex` tag. A notice alone does not
+implement consent or data deletion.
+
 ## Run locally
 
 **Python 3.10+**, **Node.js 22.12+**, and a registered Discogs application.

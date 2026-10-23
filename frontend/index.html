@@ -58,11 +58,26 @@
             <ol id="demand-results"></ol>
             <p id="demand-empty" class="empty-message">No records with demand found so far.</p>
           </section>
+          <nav id="pagination" class="pagination" aria-label="Result pages" hidden>
+            <button id="page-previous" type="button" aria-label="Previous page">&#8592;</button>
+            <span id="page-position" role="status" aria-live="polite"></span>
+            <button id="page-next" type="button" aria-label="Next page">&#8594;</button>
+          </nav>
       </div>
       <p id="digging-prompt" hidden>Enter a seller and start digging.</p>
       <noscript>This frontend needs JavaScript for login status and streamed recommendations.</noscript>
+      <footer class="site-footer homepage-footer" aria-label="Legal information">
+        <a href="/privacy/">Legal</a>
+        <button id="youtube-withdraw" type="button" hidden>Withdraw YouTube consent</button>
+      </footer>
     </main>
     <div id="player-video" class="player-video" hidden>
+      <div id="youtube-consent" class="youtube-consent" hidden>
+        <p>Allow YouTube to receive your browser information and use cookies or other identifiers when you play previews? Optional; applies until you reload this page. Withdraw using the footer control, which reloads the page.</p>
+        <a href="/privacy/#cookies" target="_blank" rel="noopener noreferrer">Privacy details</a>
+        <button id="youtube-allow" type="button">Allow YouTube and play</button>
+        <button id="youtube-decline" type="button">Not now</button>
+      </div>
       <div id="youtube-player"></div>
     </div>
     <aside id="player-bar" class="player-bar" aria-label="Release preview player" hidden>
@@ -71,7 +86,7 @@
         <span id="player-release"></span>
       </div>
       <span id="player-position"></span>
-      <button id="player-toggle" type="button" aria-label="Play preview" title="Play" disabled>▶</button>
+      <button id="player-toggle" type="button" aria-label="Play preview" title="Play" disabled></button>
       <button id="player-next" type="button" aria-label="Next song" disabled>Next ›</button>
       <a id="player-youtube" target="_blank" rel="noopener noreferrer">YouTube ↗</a>
       <button id="player-close" type="button" aria-label="Close player">×</button>

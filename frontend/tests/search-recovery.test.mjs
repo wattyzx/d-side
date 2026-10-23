@@ -21,6 +21,17 @@ function fixture(t) {
     return { id, value: '', textContent: '', children: [], attributes: {},
       get valueAsNumber() { return Number(this.value); },
       append(...children) { this.children.push(...children); },
+      insertBefore(child, reference) {
+        if (child.parent) child.remove();
+        const index = reference ? this.children.indexOf(reference) : this.children.length;
+        this.children.splice(index, 0, child);
+        child.parent = this;
+      },
+      get lastElementChild() { return this.children.at(-1); },
+      remove() {
+        if (this.parent) this.parent.children.splice(this.parent.children.indexOf(this), 1);
+        this.parent = null;
+      },
       replaceChildren(...children) { this.children = children; },
       setAttribute(key, value) { this.attributes[key] = value; },
       setCustomValidity() {}, reportValidity() { return true; },
@@ -84,14 +95,23 @@ test('reload restores results, waits for old search cancellation, resumes, and c
   assert.equal(request.max_price, 20);
   assert.notEqual(request.search_id, oldId);
   const encoder = new TextEncoder();
-  controller.enqueue(encoder.encode(JSON.stringify({ type: 'recommendation', recommendation: record(2) }) + '\n'));
+  const originalRow = elements.results.children[0];
+  controller.enqueue(encoder.encode(JSON.stringify({ type: 'progress', page: 1, pages: 2, listings: 10 }) + '\n'));
+  await until(() => elements.status.textContent.includes('page 1'));
+  assert.equal(elements.results.children[0], originalRow, 'Progress preserves the existing row and cover');
+  controller.enqueue(encoder.encode(JSON.stringify({ type: 'recommendation', recommendation: {
+    ...record(2), score: 0.9, score_breakdown: { total: 0.9 },
+  } }) + '\n'));
+  await until(() => elements.results.children.length === 2);
+  assert.equal(elements.results.children[0], originalRow, 'Higher scores do not move existing rows while loading');
   controller.enqueue(encoder.encode('{"type":"done","has_more":false}\n'));
   await until(() => elements.results.children.length === 2 && !elements.search.disabled);
+  assert.equal(elements.results.children[1], originalRow, 'Completion sorts scores without rebuilding rows');
   assert.equal(store.load('Alice').activeId, null);
   assert.equal(store.load('Alice').hasMore, false);
   function descendants(item) { return [item, ...item.children.flatMap(descendants)]; }
-  const buy = elements.results.children.flatMap(descendants)
-    .find(item => item.textContent === '🛒 ↗');
+  const buy = descendants(originalRow)
+    .find(item => item.textContent === 'Buy ↗');
   assert.equal(buy.href, 'https://www.discogs.com/sell/item/101');
   assert.equal(buy.target, '_blank');
   await elements.account.children.find(item => item.textContent === 'Sign out').onclick();

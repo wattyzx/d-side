@@ -6,6 +6,7 @@ import { createReleasePlayer, playableVideos } from './player.js';
 import { createSearchStorage } from './search-storage.js';
 import { errorMessage } from './error-message.js';
 import { ApiError } from './api/http.ts';
+import { createRecordList } from './record-list.js';
 
 // Accessing sessionStorage itself can throw in restricted browser contexts.
 let browserStorage;
@@ -29,6 +30,15 @@ const tabs = [
   { name: 'wantlist', button: 'wantlist-tab', panel: 'wantlist-section' },
   { name: 'demand', button: 'demand-tab', panel: 'demand-section' },
 ];
+const pages = { recommendations: 1, wantlist: 1, demand: 1 };
+const mobileLayout = window.matchMedia?.('(max-width: 700px)');
+let pageSize = mobileLayout?.matches ? 15 : 30;
+mobileLayout?.addEventListener('change', event => {
+  const nextSize = event.matches ? 15 : 30;
+  for (const tab of tabs) pages[tab.name] = Math.floor((pages[tab.name] - 1) * pageSize / nextSize) + 1;
+  pageSize = nextSize;
+  render();
+});
 const loginErrors = {
   incomplete: 'Discogs login was cancelled or incomplete. Please try again.',
   expired: 'Your login expired or did not match this browser. Please try again.',
@@ -128,6 +138,7 @@ function renderAccount() {
     container.append(button);
   } else {
     container.append(link('Connect with Discogs', discogsLoginUrl));
+    container.append(link('How we use your data', '/privacy/'));
     const retry = node('button', 'Refresh connection');
     retry.type = 'button';
     retry.onclick = checkAccount;
@@ -170,6 +181,7 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     row.className += ' ranked';
     const number = node('span', `${rank}.`, 'record-rank');
     number.setAttribute('aria-label', `Rank ${rank}`);
+    row.rankLabel = number;
     row.append(number);
   }
   const canPlay = playableVideos(record).length > 0;
@@ -179,7 +191,9 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     cover.title = `Play ${record.title}`;
     cover.setAttribute('aria-label', `Play preview of ${record.title}`);
     cover.onclick = () => { void previewPlayer.play(record); };
-    cover.append(node('span', '▶', 'cover-play'));
+    const playIcon = node('span', '', 'cover-play');
+    playIcon.setAttribute('aria-hidden', 'true');
+    cover.append(playIcon);
   }
   const placeholder = node('span', '','cover-placeholder');
   cover.append(placeholder);
@@ -243,6 +257,7 @@ function recordRow(record, recommend, demandRanked = false, rank) {
     button.disabled = busy() || !state.account;
     button.setAttribute('aria-label', `Add ${title} to wantlist`);
     button.onclick = () => saveRecord(record);
+    row.wantlistButton = button;
     purchaseActions.append(separator(), button);
     const explanation = node('details', undefined, 'match-details');
     explanation.hidden = true;
@@ -270,6 +285,9 @@ function recordRow(record, recommend, demandRanked = false, rank) {
   row.append(cover, details);
   return row;
 }
+
+const renderRecords = createRecordList((record, kind, rank) =>
+  recordRow(record, kind !== 'wantlist', kind === 'demand', rank));
 
 function render() {
   renderAccount();
@@ -302,9 +320,22 @@ function render() {
   elements['results-count'].textContent = `(${visible.length})`;
   elements['wantlist-count'].textContent = `(${state.wants.length})`;
   elements['demand-count'].textContent = `(${demandRecords.length})`;
-  elements.results.replaceChildren(...visible.map((record, index) => recordRow(record, true, false, index + 1)));
-  elements.wantlist.replaceChildren(...state.wants.map(record => recordRow(record, false)));
-  elements['demand-results'].replaceChildren(...demandRecords.map((record, index) => recordRow(record, true, true, index + 1)));
+  const listOptions = { loading: !!state.active, disabled: busy() || !state.account, pageSize };
+  const lists = [
+    ['recommendations', elements.results, visible],
+    ['wantlist', elements.wantlist, state.wants],
+    ['demand', elements['demand-results'], demandRecords],
+  ];
+  for (const [kind, container, records] of lists) {
+    const pagination = renderRecords(container, records, kind, { ...listOptions, page: pages[kind] });
+    pages[kind] = pagination.page;
+    if (kind === state.tab) {
+      elements.pagination.hidden = pagination.pages <= 1;
+      elements['page-position'].textContent = `${pagination.page} / ${pagination.pages}`;
+      elements['page-previous'].disabled = pagination.page === 1;
+      elements['page-next'].disabled = pagination.page === pagination.pages;
+    }
+  }
   elements['wantlist-empty'].hidden = state.wants.length > 0;
   elements['demand-empty'].hidden = demandRecords.length > 0;
   elements.empty.hidden = !!visible.length || !!state.active;
@@ -527,6 +558,13 @@ elements.home.onclick = async event => {
     render();
   }
 };
+for (const [id, direction] of [['page-previous', -1], ['page-next', 1]]) {
+  elements[id].onclick = () => {
+    pages[state.tab] += direction;
+    render();
+    elements['results-layout'].scrollIntoView?.({ block: 'start' });
+  };
+}
 elements.more.onclick = () => search(true);
 elements.cancel.onclick = async () => {
   const request = state.active;

@@ -39,7 +39,7 @@ function fixture({ delayedApi = false } = {}) {
     pauseVideo() { this.events.onStateChange({ data: 2 }); }
     stopVideo() { this.stopped = true; }
   } };
-  const window = { location: { origin: 'http://localhost:5173' },
+  const window = { location: { origin: 'http://localhost:5173', reload() { this.reloaded = true; } },
     setTimeout() { return 1; }, clearTimeout() {},
     ...(delayedApi ? {} : { YT: api }),
   };
@@ -47,6 +47,35 @@ function fixture({ delayedApi = false } = {}) {
   return { controller, element, classes, scripts, window, get player() { return player; },
     finishApi() { window.YT = api; window.onYouTubeIframeAPIReady(); } };
 }
+
+async function allowPlay(f, release = record) {
+  await f.controller.play(release);
+  return f.element('youtube-allow').onclick();
+}
+
+test('cover clicks and declining do not load YouTube; consent is required again on a fresh page', async () => {
+  const f = fixture({ delayedApi: true });
+  await f.controller.play(record);
+  assert.equal(f.scripts.length, 0);
+  assert.equal(f.player, undefined);
+  assert.equal(f.element('youtube-consent').hidden, false);
+  f.element('youtube-decline').onclick();
+  assert.equal(f.element('player-bar').hidden, true);
+  assert.equal(f.scripts.length, 0);
+  await f.controller.play(record);
+  const pending = f.element('youtube-allow').onclick();
+  assert.equal(f.scripts.length, 1);
+  f.finishApi();
+  await pending;
+  assert.deepEqual(f.player.loaded, ['abcdefghijk']);
+  assert.equal(f.element('youtube-withdraw').hidden, false);
+  f.element('youtube-withdraw').onclick();
+  assert.equal(f.player.stopped, true);
+  assert.equal(f.window.location.reloaded, true);
+  const fresh = fixture({ delayedApi: true });
+  await fresh.controller.play(record);
+  assert.equal(fresh.scripts.length, 0);
+});
 
 test('extracts supported video URLs and rejects other hosts or invalid IDs', () => {
   for (const uri of [first.uri, 'https://youtu.be/abcdefghijk?t=3',
@@ -65,15 +94,15 @@ test('preserves playable video order, skips non-embeddable entries, and deduplic
 test('starts the first song, advances, handles pause and blocked playback, and closes', async () => {
   const f = fixture();
   assert.equal(f.element('player-bar').hidden, true);
-  await f.controller.play(record);
+  await allowPlay(f);
   assert.deepEqual(f.player.loaded, ['abcdefghijk']);
   assert.equal(f.element('player-title').textContent, 'First song');
   assert.equal(f.element('player-position').textContent, '1/2');
   assert.equal(f.element('player-video').hidden, false);
   f.element('player-toggle').onclick();
-  assert.equal(f.element('player-toggle').textContent, '⏸');
+  assert.equal(f.element('player-toggle').attributes['data-playing'], 'true');
   f.element('player-toggle').onclick();
-  assert.equal(f.element('player-toggle').textContent, '▶');
+  assert.equal(f.element('player-toggle').attributes['data-playing'], 'false');
   f.element('player-next').onclick();
   assert.deepEqual(f.player.loaded, ['abcdefghijk', 'lmnopqrstuv']);
   assert.equal(f.element('player-position').textContent, '2/2');
@@ -90,7 +119,7 @@ test('starts the first song, advances, handles pause and blocked playback, and c
 
 test('automatically advances on completion and switches releases without another player', async () => {
   const f = fixture();
-  await f.controller.play(record);
+  await allowPlay(f);
   const instance = f.player;
   f.player.events.onStateChange({ data: 0 });
   assert.equal(f.element('player-title').textContent, 'Second song');
@@ -101,7 +130,8 @@ test('automatically advances on completion and switches releases without another
 
 test('only the latest cover click starts playback while the API is loading', async () => {
   const f = fixture({ delayedApi: true });
-  const a = f.controller.play(record);
+  await f.controller.play(record);
+  const a = f.element('youtube-allow').onclick();
   const b = f.controller.play({ ...record, videos: [second] });
   assert.equal(f.scripts.length, 1);
   f.finishApi();
@@ -111,7 +141,8 @@ test('only the latest cover click starts playback while the API is loading', asy
 
 test('closing before API initialization prevents delayed playback', async () => {
   const f = fixture({ delayedApi: true });
-  const pending = f.controller.play(record);
+  await f.controller.play(record);
+  const pending = f.element('youtube-allow').onclick();
   f.controller.close();
   f.finishApi();
   await pending;
@@ -123,7 +154,8 @@ test('closing before API initialization prevents delayed playback', async () => 
 
 test('script failures show a retryable error and reopening can succeed', async () => {
   const f = fixture({ delayedApi: true });
-  const pending = f.controller.play(record);
+  await f.controller.play(record);
+  const pending = f.element('youtube-allow').onclick();
   f.scripts[0].onerror();
   await pending;
   assert.match(f.element('player-message').textContent, /Could not load YouTube/);

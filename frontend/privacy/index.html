@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="How D-side uses your data and browser storage, and your privacy choices.">
+    <meta name="robots" content="noindex">
+    <title>Privacy &amp; cookies — D-side</title>
+    <link rel="icon" type="image/jpeg" href="/crate_empty.jpg">
+    <link rel="stylesheet" href="/src/style.css">
+  </head>
+  <body>
+    <main class="privacy-page">
+      <header>
+        <a class="brand" href="/" aria-label="D-side homepage"><span>D-side</span><span class="brand-subtitle">Decide what to dig</span></a>
+        <a href="/">← Back to digging</a>
+      </header>
+      <article class="content privacy-content">
+        <h1>Privacy &amp; cookies</h1>
+        <p class="privacy-meta">Draft · Updated 23 October 2026</p>
+        <p class="error"><strong>Private beta — invited testers only.</strong> D-side is still being developed. This privacy notice is being finalised. For privacy questions or data-deletion requests, email us.</p>
+
+        <section id="data">
+          <h2>What we use and why</h2>
+          <p>When you connect Discogs, we receive your username, access tokens, collection and wantlist. We use these, your seller searches and filters to recommend records and make wantlist updates you request. Connecting is optional, but these features need your account data. We do not receive your Discogs password or take payments.</p>
+          <p>We also fetch seller and listing information from Discogs. Our current cache stores full API responses, which can include notes, ratings, dates added, collection identifiers, seller statistics and shipping/payment-policy text.</p>
+        </section>
+
+        <section id="providers">
+          <h2>Who receives data</h2>
+          <p><a href="https://render.com/privacy">Render</a> hosts D-side and <a href="https://turso.tech/privacy-policy">Turso</a> stores its database, both configured in EU regions. <a href="https://support.discogs.com/hc/en-us/articles/360009334513-Privacy-Policy">Discogs</a> handles account authorisation and API requests. Artwork hosts receive image requests; <a href="https://policies.google.com/privacy">YouTube</a> receives browser information when previews load. Their own privacy policies also apply.</p>
+          <p>Authorised operators may access data to run the service or handle requests. Data may be disclosed where legally required. EU hosting does not exclude processing outside the EEA by providers or connected services.</p>
+        </section>
+
+        <section id="retention">
+          <h2>How long data stays</h2>
+          <p>By default, pending logins expire after <strong>10 minutes</strong>, sessions and stored access credentials after <strong>7 days</strong>, and cached Discogs responses after <strong>6 hours</strong>. Expired database records are removed by periodic cleanup while the service runs, not necessarily immediately. Access credentials are encrypted in the database.</p>
+          <p>Signing out deletes the current session and this tab’s saved search. It does not erase all server data, other-device sessions or your Discogs account. Username-bearing cache metadata currently has no automatic expiry. Some preference counts remain in working memory until replaced or the process restarts.</p>
+        </section>
+
+        <section id="cookies">
+          <h2>Cookies &amp; previews</h2>
+          <div class="privacy-table-wrap">
+            <table>
+              <caption>D-side’s browser storage — default durations</caption>
+              <thead><tr><th scope="col">Name</th><th scope="col">Purpose</th><th scope="col">Duration</th></tr></thead>
+              <tbody>
+                <tr><td><code>dside_oauth</code><br>HttpOnly cookie</td><td>Complete Discogs login.</td><td>Up to 10 minutes.</td></tr>
+                <tr><td><code>dside_session</code><br>HttpOnly cookie</td><td>Keep you signed in.</td><td>Up to 7 days; cleared on sign-out.</td></tr>
+                <tr><td><code>dside.search.v1</code><br>Session storage</td><td>Restore username, seller, filters, results and search progress.</td><td>Tab session; cleared on sign-out. Data older than 24 hours is cleared when read. Browser session restoration can preserve it.</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>Necessary login cookies do not require consent. Search recovery’s eligibility for the same exemption still needs assessment. You can block or clear storage in your browser; blocking it prevents login or search recovery respectively. No separate analytics or advertising SDK was found in the reviewed app code.</p>
+          <p>Clicking a playable cover first shows a choice. YouTube's player and scripts load only after you select <strong>Allow YouTube and play</strong>. YouTube then receives browser information, including your IP address, and may use cookies or other identifiers. This is optional: choose <strong>Not now</strong> to dismiss the preview, or use the external YouTube link to visit YouTube instead. See <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</p>
+          <p>Your choice applies to previews on the current page only and is not saved across reloads. Select <strong>Withdraw YouTube consent</strong> in the app footer to stop playback and reload the page, unloading YouTube's player and scripts. Further previews require a new choice. Closing the player alone does not withdraw consent. Withdrawal cannot undo data already sent or erase cookies already set by YouTube; these can be managed through your browser and Google settings. <strong>Provider storage types and durations still need verification.</strong></p>
+        </section>
+
+        <section id="rights">
+          <h2>Your rights</h2>
+          <p>Contact us using the email below to request access, correction, erasure, restriction or portability, subject to GDPR conditions. You may object to legitimate-interest processing, including related profiling, and withdraw consent where used without affecting earlier lawful processing. These rights also apply to sellers whose personal data we process.</p>
+          <p>Requests are generally free and answered without undue delay, normally within one month. A permitted extension of up to two further months must be explained within the first month. We may verify identity where reasonably needed. Never send passwords or access tokens.</p>
+          <p>You can revoke D-side’s access in Discogs settings; this does not erase stored data. You may complain to your supervisory authority, including Italy’s <a href="https://www.garanteprivacy.it/">Garante</a>.</p>
+        </section>
+
+        <section id="deletion">
+          <h2>Request deletion of your data</h2>
+          <p>Email us with the subject <strong>D-side data deletion request</strong> and your Discogs username. You can request deletion of personal data held by D-side, including stored access credentials, sessions and account-specific caches. Sellers can also contact us about their personal data.</p>
+          <p>This is a manual request, not automatic deletion. We may ask for proportionate verification of your identity; never send your password or access tokens. We will respond without undue delay, normally within one month, and explain any lawful retention or applicable extension. Deletion from D-side does not delete your Discogs account, collection or wantlist. Sign out to clear the saved search in your current browser tab; other tabs or devices may retain their own browser data.</p>
+        </section>
+
+        <section id="operator">
+          <h2>Contact us</h2>
+          <p><strong>Email:</strong> <a href="mailto:dsidecc@gmail.com">dsidecc@gmail.com</a></p>
+        </section>
+
+
+        <section id="changes">
+          <h2>Updates</h2>
+          <p>We will update this notice when our practices change and highlight material changes where required.</p>
+          <p class="privacy-meta">References: <a href="https://www.edpb.europa.eu/sme/be-compliant/respect-individuals-rights_en">GDPR information and rights</a> · <a href="https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/9677876">Italian cookie guidance</a></p>
+        </section>
+      </article>
+      <footer class="site-footer"><a href="/">Back to D-side</a><a href="#cookies">Cookies &amp; browser storage</a></footer>
+    </main>
+  </body>
+</html>

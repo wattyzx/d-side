@@ -54,8 +54,15 @@ community demand score, excluding owned and wantlisted records. It needs no
 additional full-release requests. Covers and styles may be unavailable there.
 
 Recommendations and wantlist matches can include YouTube videos. Click a
-playable cover to open the preview player; previews require an available,
+ playable cover to open the preview player; previews require an available,
 embeddable video. Inventory-only demand records have no videos.
+
+The cover opens a consent prompt before any YouTube player or API script loads.
+**Allow YouTube and play** enables previews for the current page only; **Not now**
+dismisses the prompt. The footer's **Withdraw YouTube consent**
+control stops playback and reloads to unload third-party code. Closing the player
+alone does not withdraw consent. Consent is never persisted across reloads.
+Withdrawal does not erase third-party cookies or data already sent.
 
 ## Checks
 

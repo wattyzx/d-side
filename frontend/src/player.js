@@ -44,10 +44,14 @@ export function createReleasePlayer({ document = globalThis.document, window = g
   let apiPromise = null;
   let initializing = null;
   let revision = 0;
+  let consent = false;
 
   function render() {
     bar.hidden = pane.hidden = !current;
     document.body.classList.toggle('player-open', !!current);
+    element('youtube-consent').hidden = !current || consent;
+    element('youtube-player').hidden = !consent;
+    element('youtube-withdraw').hidden = !consent;
     if (!current) return;
     const video = current.videos[current.index];
     element('player-title').textContent = video.title || current.record.title;
@@ -56,7 +60,7 @@ export function createReleasePlayer({ document = globalThis.document, window = g
     const external = element('player-youtube');
     external.href = `https://www.youtube.com/watch?v=${video.id}`;
     toggle.disabled = !ready;
-    toggle.textContent = playing ? '⏸' : '▶';
+    toggle.setAttribute('data-playing', String(playing));
     toggle.setAttribute('aria-label', playing ? 'Pause preview' : 'Play preview');
     toggle.title = playing ? 'Pause' : 'Play';
     next.disabled = !ready || current.index >= current.videos.length - 1;
@@ -88,11 +92,12 @@ export function createReleasePlayer({ document = globalThis.document, window = g
   }
 
   async function ensurePlayer() {
+    if (!consent) return null;
     if (ready) return youtube;
     if (initializing) return initializing;
     initializing = (async () => {
       const YT = await loadApi();
-      if (!current) return null;
+      if (!current || !consent) return null;
       return new Promise(resolve => {
         youtube = new YT.Player('youtube-player', {
           width: '100%', height: 200,
@@ -152,8 +157,9 @@ export function createReleasePlayer({ document = globalThis.document, window = g
     const request = ++revision;
     current = { record, videos, index: 0 };
     playing = false;
-    message.textContent = ready ? '' : 'Loading YouTube…';
+    message.textContent = !consent || ready ? '' : 'Loading YouTube…';
     render();
+    if (!consent) return;
     try {
       const player = await ensurePlayer();
       if (player && request === revision && current) loadCurrent();
@@ -177,6 +183,19 @@ export function createReleasePlayer({ document = globalThis.document, window = g
     else youtube.playVideo();
   };
   next.onclick = advance;
+  element('youtube-allow').onclick = () => {
+    if (!current) return;
+    consent = true;
+    return play(current.record);
+  };
+  element('youtube-decline').onclick = close;
+  element('youtube-withdraw').onclick = () => {
+    consent = false;
+    close();
+    // Removing script tags cannot undo executed third-party code. A fresh
+    // document unloads it, and consent is deliberately never persisted.
+    window.location.reload();
+  };
   element('player-close').onclick = close;
   render();
   return { play, close };
