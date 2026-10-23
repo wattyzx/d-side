@@ -33,6 +33,27 @@ in the background. Saved results expire after 24 hours and are cleared on logout
 - **Account isolation:** Personal caches are separated by account; public release metadata can be shared. Wantlist saves invalidate cached data atomically, preventing older in-flight fetches from restoring stale responses.
 - **Persistent login:** OAuth credentials stay encrypted in the configured database; the browser receives an HttpOnly session cookie. Pending logins expire after ten minutes, sessions after seven days, and signing out deletes the stored session and credentials.
 
+## Search usage counts
+
+Run `python -m app.usage` in the backend environment to print distinct accounts
+that started seller searches today, over the last 7 days, and over the last 30
+days. Windows include today and use UTC dates. The command uses the configured
+SQLite authentication database or Turso database; run it with the production
+configuration to see production usage. Counts are not exposed through a public API.
+
+Both search endpoints record accepted searches, including searches that later
+fail or are cancelled. Unauthenticated, invalid and capacity-rejected requests
+do not count. Repeated searches and multiple devices count once per account per
+day; period totals deduplicate accounts across days. Tracking starts with this
+release, so earlier activity is unavailable. Database failures log a warning and
+allow the search to continue, which may cause undercounting.
+
+`search_activity` stores only a keyed account hash and UTC date. The key is
+derived from `AUTH_ENCRYPTION_KEY`; rotating it changes account identifiers and
+can inflate distinct counts in windows spanning the rotation. Records expire
+after 90 calendar days (including today) through the existing periodic cleanup.
+Logout does not delete these records. They are pseudonymous, not anonymous.
+
 ## Privacy notice
 
 The standalone `/privacy/` page is built from `frontend/privacy/index.html` and

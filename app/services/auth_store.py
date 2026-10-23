@@ -8,6 +8,7 @@ from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
 from app.services.database import Database
+from app.services.usage_store import UsageStore
 
 
 class AuthStore:
@@ -16,6 +17,7 @@ class AuthStore:
         self.cipher = Fernet(encryption_key.encode())
         self.db_path = Path(db_path)
         self.database = database or Database(self.db_path, private=True)
+        self.usage = UsageStore(self.database, encryption_key, clock)
         with self.connect() as db:
             self.database.configure(db)
             db.execute("""CREATE TABLE IF NOT EXISTS auth_records (
@@ -64,6 +66,7 @@ class AuthStore:
     def clear_expired(self):
         with self.connect() as db:
             db.execute("DELETE FROM auth_records WHERE expires_at <= ?", (self.clock(),))
+        self.usage.clear_expired()
 
     def delete(self, kind: str, identifier: str):
         with self.connect() as db:

@@ -124,8 +124,14 @@ async def recommend_endpoint(
     request: RecommendRequest,
     connection: Request,
     account: DiscogsCredentials = Depends(require_account),
+    services=Depends(get_auth_services),
 ):
     job = start_search(account, request.search_id)
+    try:
+        await run_in_threadpool(services.store.usage.record_search, account.username)
+    except BaseException:
+        search_registry.finish(job)
+        raise
     try:
         return await run_search(connection, account, job,
                                 lambda: recommend(username=account.username, seller=request.seller,
@@ -144,9 +150,11 @@ async def recommend_endpoint(
 def recommend_stream_endpoint(
     request: RecommendStreamRequest,
     account: DiscogsCredentials = Depends(require_account),
+    services=Depends(get_auth_services),
 ):
     job = start_search(account, request.search_id)
     try:
+        services.store.usage.record_search(account.username)
         iterator = recommend_stream(username=account.username, seller=request.seller,
                                     exclude_release_ids=request.exclude_release_ids,
                                     **request.price_options(),

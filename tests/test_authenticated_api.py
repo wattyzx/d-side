@@ -87,6 +87,41 @@ class AuthenticatedAPITests(unittest.TestCase):
             self.assertEqual(client.post(path, json=body).status_code, 401)
         self.assertEqual(client.get("/health").status_code, 200)
 
+    def test_search_activity_counts_both_endpoints_once_per_account(self):
+        alice, bob = self.client("Alice"), self.client("Bob")
+        with patch("app.api.recommend", return_value={}), patch(
+            "app.api.recommend_stream", side_effect=lambda **kwargs: (event for event in ['{"type":"done"}\n'])
+        ):
+            for endpoint in ("/recommend", "/recommend/stream"):
+                self.assertEqual(self.client().post(endpoint, json={"seller": "shop"}).status_code, 401)
+                self.assertEqual(bob.post(endpoint, json={"seller": ""}).status_code, 422)
+                self.assertEqual(alice.post(endpoint, json={"seller": "shop"}).status_code, 200)
+            self.assertEqual(self.store.usage.counts()["today"], 1)
+            self.assertEqual(bob.post("/recommend/stream", json={"seller": "shop"}).status_code, 200)
+        self.assertEqual(self.store.usage.counts()["today"], 2)
+
+    def test_rejected_searches_do_not_count(self):
+        client = self.client("Alice")
+        job = search_registry.start("Alice")
+        try:
+            for endpoint in ("/recommend", "/recommend/stream"):
+                self.assertEqual(client.post(endpoint, json={"seller": "shop"}).status_code, 409)
+        finally:
+            search_registry.finish(job)
+        with patch.object(search_registry, "max_active", 0):
+            for endpoint in ("/recommend", "/recommend/stream"):
+                self.assertEqual(client.post(endpoint, json={"seller": "shop"}).status_code, 503)
+        self.assertEqual(self.store.usage.counts()["today"], 0)
+
+    def test_usage_database_failure_does_not_fail_searches(self):
+        client = self.client("Alice")
+        with patch.object(self.store.usage, "schema", side_effect=DatabaseError("Unavailable")), \
+             patch("app.api.recommend", return_value={}), \
+             patch("app.api.recommend_stream", side_effect=lambda **kwargs: (event for event in ['{"type":"done"}\n'])), \
+             self.assertLogs("app.services.usage_store", level="WARNING"):
+            for endpoint in ("/recommend", "/recommend/stream"):
+                self.assertEqual(client.post(endpoint, json={"seller": "shop"}).status_code, 200)
+
     def test_seller_urls_are_normalized_before_search(self):
         client = self.client("Alice")
         url = "https://www.discogs.com/seller/Some.Shop/shop?limit=250"

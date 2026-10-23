@@ -22,6 +22,7 @@
 
         <section id="data">
           <h2>What we use and why</h2>
+          <p>To measure use of seller searches, we store one daily activity record per account: a keyed hash of your Discogs username and the UTC date. These pseudonymous records let us count distinct accounts using searches. They do not contain search terms, IP addresses or additional browser identifiers.</p>
           <p>When you connect Discogs, we receive your username, access tokens, collection and wantlist. We use these, your seller searches and filters to recommend records and make wantlist updates you request. Connecting is optional, but these features need your account data. We do not receive your Discogs password or take payments.</p>
           <p>We also fetch seller and listing information from Discogs. Our current cache stores full API responses, which can include notes, ratings, dates added, collection identifiers, seller statistics and shipping/payment-policy text.</p>
         </section>
@@ -34,6 +35,7 @@
 
         <section id="retention">
           <h2>How long data stays</h2>
+          <p>Daily search activity records are retained for 90 UTC calendar days, including today. Older records are removed by periodic cleanup while the service runs.</p>
           <p>By default, pending logins expire after <strong>10 minutes</strong>, sessions and stored access credentials after <strong>7 days</strong>, and cached Discogs responses after <strong>6 hours</strong>. Expired database records are removed by periodic cleanup while the service runs, not necessarily immediately. Access credentials are encrypted in the database.</p>
           <p>Signing out deletes the current session and this tab’s saved search. It does not erase all server data, other-device sessions or your Discogs account. Username-bearing cache metadata currently has no automatic expiry. Some preference counts remain in working memory until replaced or the process restarts.</p>
         </section>

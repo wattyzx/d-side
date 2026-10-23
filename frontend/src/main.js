@@ -62,7 +62,9 @@ function link(text, href, external = false) {
 }
 function busy() { return !!state.active || state.cancelling || state.saving; }
 function status(text) {
-  const idlePrompt = text === 'Enter a seller and start digging';
+  const idlePrompt = text === 'Enter a seller and start digging'
+    || text === 'Connect with Discogs to search.';
+  if (idlePrompt) elements['digging-prompt'].textContent = text.endsWith('.') ? text : `${text}.`;
   elements['digging-prompt'].hidden = !idlePrompt;
   elements.status.textContent = idlePrompt ? '' : text;
 }
