@@ -71,10 +71,12 @@ implement consent or data deletion.
 
 ## Run locally
 
-**Python 3.10+**, **Node.js 22.12+**, and a registered Discogs application.
+**Python 3.10+**, **Node.js 26.12.1** (pinned in `.nvmrc`), and a registered Discogs application.
 From the project folder:
 
 ```sh
+nvm install
+nvm use
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt

@@ -138,7 +138,6 @@ function renderAccount() {
     container.append(button);
   } else {
     container.append(link('Connect with Discogs', discogsLoginUrl));
-    container.append(link('How we use your data', '/privacy/'));
     const retry = node('button', 'Refresh connection');
     retry.type = 'button';
     retry.onclick = checkAccount;
