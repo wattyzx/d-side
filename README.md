@@ -2,18 +2,24 @@
 
 **Decide what to dig.**
 
-D-side helps you find records you might like in a Discogs seller’s inventory.
-It uses your collection and wantlist to suggest what to check out next.
-Wantlist matches appear as the inventory is scanned, and recommendations appear as they are scored.
-You can open each record on Discogs or add it straight to your wantlist.
+[Try D-side](https://d-side-6sxd.onrender.com/)
 
-## How it works
+D-side helps you discover records in a Discogs seller’s inventory, using your collection and wantlist to guide the search. Find records that match your taste, spot releases you already want, and explore what to dig next.
 
-1. **Log in with Discogs.** OAuth connects your account and creates a persistent session.
-2. **Load your collection and wantlist.** Your collection defines your taste profile: styles, genres, artists, labels, and release years. Your wantlist identifies records you already want.
-3. **Pick a seller.** Enter their username or paste a Discogs shop/profile URL. The app scans their inventory page by page, skipping releases you own and showing wantlist matches as it finds them.
-4. **Pre-rank candidates.** With the fetched metadata (artist, label, year, and demand) from the seller's inventory, the pre-rank select up to 25 promising releases progressively. After the scan, up to 5 additional releases from across the remaining pool give less obvious matches a chance.
-5. **Calculate the final score.** Selected releases get their full Discogs metadata. Musical styles drive the score, with smaller artist, label, and year bonuses; genres provide a fallback when style comparison is unavailable. Recommendations above **0.1** are shown; wantlist matches do not need to meet this threshold.
+Results appear as the search progresses. Preview releases with available YouTube videos, save discoveries to your wantlist, or open the exact listing on Discogs.
+
+## Using D-side
+
+1. **Connect your Discogs account** and load your collection and wantlist.
+2. **Choose a seller** by entering their username or pasting a Discogs shop or profile URL.
+3. **Explore the results:** personalized recommendations, wantlist matches, and the **On demand** tab for releases ranked by community demand. Records you already own are excluded.
+4. **Keep digging.** Use **Search more** to score another batch, or **Buy on Discogs** to open a listing and purchase it there.
+
+## How recommendations work
+
+1. **Build a taste profile.** Your collection provides signals from styles, genres, artists, labels, and release years. Your wantlist identifies exact matches separately.
+2. **Select candidates.** As the inventory is scanned, artist, label, year, and demand help select up to 25 promising releases. After the scan, up to five additional releases from the remaining pool give less obvious matches a chance.
+3. **Score recommendations.** Selected releases receive full Discogs metadata. Musical styles drive the score, with smaller artist, label, and year bonuses; genres provide a fallback when style comparison is unavailable. Recommendations with scores above **0.1** are shown; wantlist matches bypass this threshold.
 
 Results arrive during the search. **Search more** scores another batch of unseen releases from the scanned inventory. **Cancel search** keeps results already received and stops further work once any in-flight Discogs request finishes or times out.
 
@@ -23,9 +29,9 @@ batch excluding received results, rather than keeping the original search alive
 in the background. Saved results expire after 24 hours and are cleared on logout.
 **Buy on Discogs** opens the exact listing, where you can add it to your cart.
 
-## Design choices and issues solved
+## Design choices
 
-- **Two stage ranking:** Marketplace summaries lack musical styles. Pre-ranking uses available metadata to limit full requests to a small candidate batch, balancing discovery with Discogs rate limits. Early candidates depend on the inventory scanned so far, so they can differ from a ranking of the complete inventory.
+- **Two-stage ranking:** Marketplace summaries lack musical styles. Pre-ranking uses available metadata to limit full requests to a small candidate batch, balancing discovery with Discogs rate limits. Early candidates depend on the inventory scanned so far, so they can differ from a ranking of the complete inventory.
 - **Page limit:** Discogs blocks inventory pages above 100 for other sellers. At 100 listings per page, searches cover at most **10,000 listings**. Larger inventories show an incomplete-results notice; **Search more** stays within those accessible pages.
 - **Responsive searches:** Results stream progressively. A separate search worker pool keeps login, health checks, and cancellation responsive. One search is allowed per account across browser tabs. Search IDs prevent delayed cancellation from stopping a newer search.
 - **Less repeated work:** Taste lookups and listing scores are reused during scans. Discogs responses and release metadata are cached, and expired storage is cleaned regularly.
@@ -35,8 +41,11 @@ in the background. Saved results expire after 24 hours and are cleared on logout
 
 ## Run locally
 
-**Python 3.10+**, **Node.js 26.12.1** (pinned in `.nvmrc`), and a registered Discogs application.
-From the project folder:
+You’ll need **Python 3.10+**, **Node.js** (the project version is pinned in `.nvmrc`), and a registered Discogs application. The commands below use `nvm` to select Node.js.
+
+### 1. Install dependencies
+
+From the project root:
 
 ```sh
 nvm install
@@ -46,7 +55,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 npm ci --prefix frontend
 ```
-Discogs application token:
+
+### 2. Configure authentication
+
+Create a `.env` file in the project root with your Discogs application credentials and a Fernet encryption key:
 
 ```env
 DISCOGS_CONSUMER_KEY=your_key_here
@@ -54,18 +66,28 @@ DISCOGS_CONSUMER_SECRET=your_secret_here
 AUTH_ENCRYPTION_KEY=your_generated_key_here
 ```
 
-Start both servers:
+Generate the encryption key with:
+
+```sh
+.venv/bin/python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Copy the output into `AUTH_ENCRYPTION_KEY` and keep this key stable between restarts. For local development, use `http://localhost:5173/auth/discogs/callback` as the Discogs callback URL. SQLite is the default storage backend.
+
+### 3. Start the app
 
 ```sh
 ./run.sh
 ```
 
-Vite proxies API and authentication requests to the backend. Use `localhost:5173` consistently.
+Open **http://localhost:5173**. Vite proxies API and authentication requests to the backend. Use `localhost` consistently for the login flow.
 
 Press **Ctrl+C** to stop both servers. Later starts use `.venv` automatically.
 Restart the servers after changing configuration.
 
 The standalone frontend lives in `frontend/`. See [the frontend guide](frontend/README.md) for its code, tests, and player behavior.
+
+## Deployment
 
 ### Serve the built frontend with FastAPI
 
@@ -108,13 +130,27 @@ dependencies from the lockfile (including build tools), and builds
 The start script binds to `0.0.0.0` and uses the host's `PORT` environment variable
 or port `8000` by default. `/health` checks process liveness only.
 Configure secrets and production URLs through the host's environment settings.
-For Render, use the configuration below.
+For Render, use the repository configuration described below.
 
 Route the entire public HTTPS origin to the single Uvicorn service started by
 `run-production.sh`. FastAPI serves `/` and build assets, while `/auth/*`,
 `/recommend`, `/recommend/stream`, `/recommend/cancel`, `/wantlist`, and `/health`
 retain their backend routes. The frontend uses relative API URLs; no separate
 API hostname or Vite development proxy is needed in production.
+
+### Render
+
+[render.yaml](render.yaml) defines a single Render web service with Turso storage, secure cookies, and a `/health` check. It uses `build-production.sh` to build and `run-render.sh` to start the app.
+
+Set these secrets in Render’s environment settings:
+
+- `DISCOGS_CONSUMER_KEY` and `DISCOGS_CONSUMER_SECRET`
+- `AUTH_ENCRYPTION_KEY` — keep the same key across deployments
+- `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`
+
+The Render start script uses `RENDER_EXTERNAL_URL` as the public origin unless `FRONTEND_URL` is explicitly set. For a custom domain, set `FRONTEND_URL` to that HTTPS origin and update any explicit `DISCOGS_CALLBACK_URL` to match.
+
+### Deployment checks
 
 On the deployed domain, verify:
 
@@ -127,8 +163,7 @@ On the deployed domain, verify:
    start after cancellation and results continue arriving progressively.
 5. Save a record to the wantlist and confirm it on Discogs, then log out.
 
-Repeat the streaming check through the public domain, not just localhost. Keep
-the deployment checklist item open until that proxy-level check passes.
+Run the streaming check through the public domain to verify that the hosting proxy delivers results progressively.
 
 ## Stack
 
@@ -138,7 +173,9 @@ the deployment checklist item open until that proxy-level check passes.
 - **Storage:** SQLite locally or Turso for sessions and response caches, plus a bounded in-memory release cache.
 - **Recommendations:** Deterministic metadata scoring; no trained model yet.
 
-To run the checks:
+## Development checks
+
+From the project root:
 
 ```sh
 STORAGE_BACKEND=sqlite .venv/bin/python -m unittest discover -s tests -v
@@ -166,36 +203,10 @@ longer before caches are populated.
 **one backend instance with one Uvicorn worker** until this state is shared.
 Authentication and response caches support local SQLite or remote Turso storage.
 
-## TODO
+## Roadmap
 
-Candidate selection:
+- [ ] **Improve candidate selection.** Build an artist/label style-frequency baseline, then evaluate one-vs-rest logistic regression against the current pre-ranker. Keep evaluation releases and alternate editions separate from training data, and compare approaches under the same 30-release enrichment budget, including five exploration slots. Integrate behind a feature flag, preserving the current fallback and actual Discogs styles for final scoring. See the [style pre-ranking proposal](docs/style-pre-ranking.md).
+- [ ] **Explore artist and label similarity.** Evaluate shared styles, release eras, and catalogue relationships after establishing the style baseline. Start with simple similarity before testing graph embeddings. See the [artist and label similarity experiment](docs/artist-label-similarity.md).
+- [ ] **Measure capacity under load.** Establish supported concurrent usage and tune `MAX_CONCURRENT_SEARCHES` based on observed behavior.
 
-- [ ] Build a dataset of releases with artists, labels, years, and styles; keep evaluation releases and their alternate editions apart from training data.
-- [ ] Build an artist/label style-frequency baseline, then train one-vs-rest logistic regression to predict styles from listing metadata.
-- [ ] Compare both approaches with the current pre-ranker under the same progressive selection behavior and full-metadata request budget; see the [style pre-ranking proposal](docs/style-pre-ranking.md).
-- [ ] Integrate behind a feature flag, retaining the current fallback and actual Discogs styles for final scoring.
-- [ ] Evaluate artist and label similarity after the baseline.
-
-Implementations:
-
-- [X] Keep searches running when an individual release lookup returns 404 or 410: skip the release in both recommendation and wantlist enrichment, and track skipped IDs to avoid retrying another copy during the same search. Continue surfacing authentication failures, rate limits, and exhausted network retries as search errors.
-- [X] Add regression tests for a permanently unavailable candidate and wantlist release: later valid records must still be emitted and the stream must reach `done`.
-- [X] Link or embedd a player for the records available on digital platforms. Discogs may have YouTube link attached to some releases.
-- [x] Add a **Buy on Discogs** action for each listing; cart actions happen on Discogs.
-
-Steps towards deployment:
-
-- [X] Enable Turso storage and pass the live storage check for sessions and response caches.
-- [X] Configure production routing for authentication, recommendations, and wantlist saves. Verify streaming.
-- [X] Set production secrets, a stable encryption key, HTTPS URLs, and allowed origins. Verify OAuth and secure cookies.
-- [X] Deploy one backend instance with one worker and a `/health` check.
-- [X] Pass Python tests, frontend tests, production build, and lint checks.
-- [ ] Test load limitations. Need to establish `MAX_CONCURRENT_USERS`.
-- [X] Smoke-test login, refresh, search, cancellation, **Search more**, saves, and logout; verify persistence across restarts and behavior after hosting sleep.
-## What’s next
-
-**Style pre-ranking:** Start with artist/label style frequencies, then test one-vs-rest logistic regression using artist, label, and year. Compare predicted styles with the user's collection profile to help select promising records before fetching full metadata. Evaluate offline under the existing 30-release enrichment budget, retaining five exploration slots and actual Discogs styles for final scoring. This is proposed; no model has been trained or integrated. See the [style pre-ranking proposal](docs/style-pre-ranking.md).
-
-**Artist and label similarity:** After the style baseline, explore shared styles, release eras, and catalogue relationships to surface unfamiliar but related names. Start with a simple similarity baseline, then evaluate graph embeddings such as node2vec as a small pre-ranking bonus.
-This is proposed and has not been trained or integrated; see the
-[artist and label similarity experiment](docs/artist-label-similarity.md).
+The recommendation experiments are proposals; no model has been trained or integrated.
