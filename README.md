@@ -1,8 +1,8 @@
-# D(e)Side
+# D-side
 
 **Decide what to dig.**
 
-D(e)Side helps you find records you might like in a Discogs seller’s inventory.
+D-side helps you find records you might like in a Discogs seller’s inventory.
 It uses your collection and wantlist to suggest what to check out next.
 Wantlist matches appear as the inventory is scanned, and recommendations appear as they are scored.
 You can open each record on Discogs or add it straight to your wantlist.
@@ -32,63 +32,6 @@ in the background. Saved results expire after 24 hours and are cleared on logout
 - **Shared rate limits:** Requests are paced across accounts, and retries respect upstream cooldowns. Rate-limit feedback is retained even when a request’s search is cancelled.
 - **Account isolation:** Personal caches are separated by account; public release metadata can be shared. Wantlist saves invalidate cached data atomically, preventing older in-flight fetches from restoring stale responses.
 - **Persistent login:** OAuth credentials stay encrypted in the configured database; the browser receives an HttpOnly session cookie. Pending logins expire after ten minutes, sessions after seven days, and signing out deletes the stored session and credentials.
-
-## Search usage counts
-
-Run `python -m app.usage` in the backend environment to print distinct accounts
-that started seller searches today, over the last 7 days, and over the last 30
-days. Windows include today and use UTC dates. The command uses the configured
-SQLite authentication database or Turso database; run it with the production
-configuration to see production usage. Counts are not exposed through a public API.
-
-Both search endpoints record accepted searches, including searches that later
-fail or are cancelled. Unauthenticated, invalid and capacity-rejected requests
-do not count. Repeated searches and multiple devices count once per account per
-day; period totals deduplicate accounts across days. Tracking starts with this
-release, so earlier activity is unavailable. Database failures log a warning and
-allow the search to continue, which may cause undercounting.
-
-`search_activity` stores only a keyed account hash and UTC date. The key is
-derived from `AUTH_ENCRYPTION_KEY`; rotating it changes account identifiers and
-can inflate distinct counts in windows spanning the rotation. Records expire
-after 90 calendar days (including today) through the existing periodic cleanup.
-Logout does not delete these records. They are pseudonymous, not anonymous.
-
-## Privacy notice
-
-The standalone `/privacy/` page is built from `frontend/privacy/index.html` and
-works without JavaScript or a Discogs login. Vite builds both HTML entry points;
-the backend serves the privacy directory through its existing static-file mount.
-The homepage footer and signed-out account area link to it.
-
-The notice is a **draft**, with `noindex` until these launch requirements are resolved:
-
-- Supply the controller's name, contact address and privacy email; confirm whether
-  a representative or data protection officer is applicable.
-- Confirm the proposed legal bases and legitimate-interest assessments.
-- Minimise complete Discogs API responses before caching: current responses can
-  include notes, ratings, collection identifiers and seller details not used by
-  recommendations. Disclose only the actual resulting data categories.
-- Add justified retention/deletion for username-bearing `cache_namespaces`
-  metadata, which currently has no automatic expiry. Account for working-memory
-  preference caches as well as database payloads.
-- Assess whether automatic search recovery qualifies for the strictly necessary
-  storage exemption; session storage is not automatically exempt.
-- Determine how Article 14 information reaches sellers whose personal data is
-  retrieved, or document an applicable exception.
-- Render hosting and Turso database EU regions are confirmed by the operator.
-  Verify provider agreements, recipient entities, any international access or
-  transfers, and applicable safeguards.
-- Set accurate log, backup and correspondence retention periods and verify that
-  the deployed cookie/session settings match the notice.
-- Verify the implemented YouTube consent gate and withdrawal-by-reload in a
-  browser, including network requests before consent. Inventory actual provider
-  storage and durations.
-- Confirm a working process for access, correction, portability and deletion requests.
-
-After completing these items, replace the draft notes with confirmed disclosures,
-update the notice date and remove its `noindex` tag. A notice alone does not
-implement consent or data deletion.
 
 ## Run locally
 
@@ -187,70 +130,6 @@ On the deployed domain, verify:
 Repeat the streaming check through the public domain, not just localhost. Keep
 the deployment checklist item open until that proxy-level check passes.
 
-### Deploy on Render
-
-The root `render.yaml` defines one Python web service in Frankfurt on the Free
-plan, with Turso storage. It builds both parts of the app and serves them from
-one HTTPS origin. Node and Python versions are pinned in the Blueprint. Python
-3.12 is selected for hosting; run the tests on that runtime before release.
-
-1. Commit and push the deployment files to your Git provider.
-2. In Render, select **New > Blueprint** and connect this repository and branch.
-3. Enter the five prompted values from your existing private configuration:
-   `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `DISCOGS_CONSUMER_KEY`,
-   `DISCOGS_CONSUMER_SECRET`, and `AUTH_ENCRYPTION_KEY`. Reuse your existing
-   encryption key; do not generate a different key on each deployment.
-4. Review the service settings and create the Blueprint. The build command is
-   `bash build-production.sh`; the start command is `bash run-render.sh`.
-5. Open the assigned `https://<service>.onrender.com` URL. The Render launcher
-   uses `RENDER_EXTERNAL_URL` as `FRONTEND_URL`. The app derives its callback
-   (`/auth/discogs/callback`), allowed origin, and Secure cookie setting from it.
-   If your Discogs application has a configured callback URL, update it to the
-   deployed callback. Do not copy localhost URL overrides into Render.
-6. Run the production routing checks above. In browser cookie storage, verify
-   `dside_session` is Secure, HttpOnly, and SameSite=Lax. Restart the service and
-   confirm that the session persists.
-
-Automatic application deploys are disabled initially. After pushing an update,
-use Render's manual deploy action. Keep one instance and one Uvicorn worker.
-Redeploys can interrupt active searches; verify cancellation and fresh searches
-after a deployment. `/health` is a liveness check, not a database readiness check.
-
-For a custom domain later, add it in Render and set `FRONTEND_URL` to its HTTPS
-origin. Remove stale `DISCOGS_CALLBACK_URL` and `CORS_ALLOWED_ORIGINS` overrides
-or update them to match. Restart and repeat OAuth verification.
-
-### Storage: SQLite or Turso
-
-SQLite remains the default. To use the Turso **libSQL** database, add its
-credentials to `.env`:
-
-```env
-TURSO_DATABASE_URL=libsql://your-database.turso.io
-TURSO_AUTH_TOKEN=your_database_token
-```
-
-Keep the existing `AUTH_ENCRYPTION_KEY` stable across restarts and deployments.
-The backend uses Turso's [SQL-over-HTTP API](https://docs.turso.tech/sdk/http/reference)
-through the existing HTTPX dependency. No additional package is required.
-
-First check the connection and storage behavior:
-
-```sh
-STORAGE_BACKEND=turso .venv/bin/python -m app.check_storage
-```
-
-After the check passes, add `STORAGE_BACKEND=turso` to `.env` and restart the
-app. Sessions and caches then use Turso. Local SQLite files are retained but
-are not uploaded; log in again and let the caches rebuild. Set
-`STORAGE_BACKEND=sqlite` to return to local storage. The database token is used
-only by the backend.
-
-`DATABASE_TIMEOUT_SECONDS` defaults to 10 for HTTP operations and local SQLite
-lock waits. Failed remote operations return a safe error and are not silently
-retried or redirected to local storage. Transactions hold the remote connection
-only for database work, never while fetching Discogs data.
-
 ## Stack
 
 - **Frontend:** HTML, CSS, vanilla JavaScript, TypeScript API/session modules, and Vite.
@@ -314,8 +193,6 @@ Steps towards deployment:
 - [ ] Test load limitations. Need to establish `MAX_CONCURRENT_USERS`.
 - [X] Smoke-test login, refresh, search, cancellation, **Search more**, saves, and logout; verify persistence across restarts and behavior after hosting sleep.
 ## What’s next
-
-**Hosted prototype:** The proposed setup is one FastAPI service serving the built vanilla frontend, with Turso for persistent storage. Deployment is still planned.
 
 **Style pre-ranking:** Start with artist/label style frequencies, then test one-vs-rest logistic regression using artist, label, and year. Compare predicted styles with the user's collection profile to help select promising records before fetching full metadata. Evaluate offline under the existing 30-release enrichment budget, retaining five exploration slots and actual Discogs styles for final scoring. This is proposed; no model has been trained or integrated. See the [style pre-ranking proposal](docs/style-pre-ranking.md).
 
